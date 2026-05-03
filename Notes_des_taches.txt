@@ -1,0 +1,1 @@
+ALTER TABLE `menage` ADD `password` TEXT NOT NULL AFTER `start_tranche`;
