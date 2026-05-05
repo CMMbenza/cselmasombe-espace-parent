@@ -254,7 +254,9 @@ try {
 }
 ?>
 
-<?php if (empty($_SESSION['parent']['email'])): ?>
+<?php
+if (!empty($_SESSION['parent']['password'] ?? null)) {
+?>
 <!-- Modal de sécurité email -->
 <div class="modal fade" id="emailSecurityModal" tabindex="-1" data-bs-backdrop="static"
     aria-labelledby="emailSecurityLabel" aria-hidden="true">
@@ -287,7 +289,7 @@ try {
 
                         <div class="input-group">
                             <input type="password" class="form-control" id="password" name="password"
-                                placeholder="********" required minlength="6">
+                                placeholder="********" required minlength="4">
 
                             <button class="btn btn-outline-secondary" type="button" id="togglePassword">
                                 <i class="bi bi-eye"></i>
@@ -295,25 +297,31 @@ try {
                         </div>
 
                         <div class="form-text">
-                            Minimum 6 caractères.
+                            Minimum 4 caractères.
                         </div>
                     </div>
                 </form>
             </div>
             <div class="modal-footer">
-                <button type="submit" form="emailForm" class="btn btn-primary">Ajouter mon email</button>
+                <button type="submit" form="emailForm" class="btn btn-primary">Enregistrer</button>
                 <button type="button" class="btn btn-danger" data-bs-dismiss="modal">Ignorer pour l'instant</button>
             </div>
         </div>
     </div>
 </div>
 
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.5.0/font/bootstrap-icons.css">
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script>
 // Affiche le modal automatiquement
 var emailModal = new bootstrap.Modal(document.getElementById('emailSecurityModal'));
 emailModal.show();
+</script>
 
+<?php
+ }
+  ?>
+<script>
 const togglePassword = document.querySelector('#togglePassword');
 const password = document.querySelector('#password');
 
@@ -327,9 +335,6 @@ togglePassword.addEventListener('click', function() {
         '<i class="bi bi-eye-slash"></i>';
 });
 </script>
-
-<?php endif; ?>
-
 <div class="container mb-4">
     <!-- Titre + année -->
     <div class="d-flex flex-wrap justify-content-between align-items-center mb-3">

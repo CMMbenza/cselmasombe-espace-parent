@@ -25,8 +25,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $error = "L'adresse email n'est pas valide.";
     } elseif (empty($password)) {
         $error = "Veuillez entrer un mot de passe.";
-    } elseif (strlen($password) < 6) {
-        $error = "Le mot de passe doit contenir au moins 6 caractères.";
+    } elseif (strlen($password) < 4) {
+        $error = "Le mot de passe doit contenir au moins 4 caractères.";
     } else {
         try {
             // 🔐 HASH du mot de passe
@@ -46,8 +46,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             // Session
             $_SESSION['parent']['email'] = $email;
+            $_SESSION['parent']['password'] = $password;
 
-            redirect('dashboard.php');
+            header('Location: dashboard.php');
+            exit;
 
         } catch (Throwable $e) {
             $error = "Erreur : " . $e->getMessage();
