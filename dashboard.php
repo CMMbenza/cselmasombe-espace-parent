@@ -254,375 +254,328 @@ try {
 }
 ?>
 
-<?php
-if (!empty($_SESSION['parent']['password'] ?? null)) {
-?>
-<!-- Modal de sécurité email -->
-<div class="modal fade" id="emailSecurityModal" tabindex="-1" data-bs-backdrop="static"
-    aria-labelledby="emailSecurityLabel" aria-hidden="true">
-    <div class="modal-dialog modal-lg">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title" id="emailSecurityLabel">CS ELMA SOMBE - Recommandation</h5>
-            </div>
-            <div class="modal-body">
-                <p>
-                    Pour renforcer la sécurité de votre compte, il est fortement recommandé d’ajouter :
-                    <strong>une adresse email valide
-                        ainsi qu’un mot de passe sécurisé</strong>
-
-                    Le mot de passe est obligatoire pour protéger l’accès à votre espace personnel.
-                </p>
-                <p>
-                    👉 Ces informations permettent de sécuriser votre compte et de prévenir toute tentative d’accès non
-                    autorisé sans votre consentement.
-                </p>
-                <form id="emailForm" method="post" action="save_email.php">
-                    <div class="mb-3">
-                        <label for="email" class="form-label">Votre email :</label>
-                        <input type="email" class="form-control" id="email" name="email"
-                            placeholder="chrismbenza@cselmasombe.org" required>
-                    </div>
-
-                    <div class="mb-3">
-                        <label for="password" class="form-label">Mot de passe :</label>
-
-                        <div class="input-group">
-                            <input type="password" class="form-control" id="password" name="password"
-                                placeholder="********" required minlength="4">
-
-                            <button class="btn btn-outline-secondary" type="button" id="togglePassword">
-                                <i class="bi bi-eye"></i>
-                            </button>
-                        </div>
-
-                        <div class="form-text">
-                            Minimum 4 caractères.
-                        </div>
-                    </div>
-                </form>
-            </div>
-            <div class="modal-footer">
-                <button type="submit" form="emailForm" class="btn btn-primary">Enregistrer</button>
-                <button type="button" class="btn btn-danger" data-bs-dismiss="modal">Ignorer pour l'instant</button>
-            </div>
-        </div>
-    </div>
-</div>
-
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.5.0/font/bootstrap-icons.css">
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script>
-// Affiche le modal automatiquement
-var emailModal = new bootstrap.Modal(document.getElementById('emailSecurityModal'));
-emailModal.show();
-</script>
 
-<?php
- }
-  ?>
-<script>
-const togglePassword = document.querySelector('#togglePassword');
-const password = document.querySelector('#password');
-
-togglePassword.addEventListener('click', function() {
-    const type = password.getAttribute('type') === 'password' ? 'text' : 'password';
-    password.setAttribute('type', type);
-
-    // Optionnel : changer l'icône
-    this.innerHTML = type === 'password' ?
-        '<i class="bi bi-eye"></i>' :
-        '<i class="bi bi-eye-slash"></i>';
-});
-</script>
 <div class="container mb-4">
-    <!-- Titre + année -->
-    <div class="d-flex flex-wrap justify-content-between align-items-center mb-3">
+
+    <!-- HEADER -->
+    <div class="d-flex flex-wrap justify-content-between align-items-center mb-4">
+
         <div>
-            <h1 class="h5 mb-1">Tableau de bord — Parent</h1>
+            <?php
+                date_default_timezone_set('Africa/Kinshasa');
+
+                $heure = (int) date('H');
+
+                if ($heure >= 5 && $heure < 18) {
+                    $salutation = "Bonjour";
+                } else {
+                    $salutation = "Bonsoir";
+                }
+            ?>
+            <h1 class="h5 mb-1 fw-bold">Tableau de bord — Parent</h1>
+            <h6>👋 <?= $salutation ?> — <?= e($_SESSION['parent']['noms'] ?? '') ?></h6>
             <p class="small text-muted mb-0">
                 Vue d’ensemble de la situation de vos enfants et de vos paiements.
             </p>
         </div>
-        <div class="small text-muted">
-            Année scolaire : <span class="badge bg-light text-dark border"><?= e($activeYear) ?></span>
+
+        <div class="small">
+            Année scolaire :
+            <span class="badge bg-light text-dark border">
+                <?= e($activeYear) ?>
+            </span>
         </div>
+
     </div>
 
-    <div class="row">
-        <!-- Colonne principale -->
-        <div class="col-lg-8 col-sm-12">
-            <!-- Cartes synthèse -->
+    <div class="row g-3">
+
+        <!-- ========================= -->
+        <!-- COLONNE GAUCHE -->
+        <!-- ========================= -->
+        <div class="col-lg-8">
+
+            <!-- ===== CARDS STATS ===== -->
             <div class="row g-3 mb-3">
+
                 <div class="col-6 col-md-3">
-                    <div class="card shadow-sm h-100 border-0">
-                        <div class="card-body">
-                            <div class="text-muted small mb-1">Enfants</div>
-                            <div class="h3 mb-1"><?= (int)$nbChildren ?></div>
-                            <div class="small text-muted">Nombre total dans votre ménage</div>
+                    <div class="card border-0 shadow-sm rounded-4">
+                        <div class="card-body text-center">
+                            <div class="text-muted small">👨‍👩‍👧 Enfants</div>
+                            <div class="h4 fw-bold"><?= (int)$nbChildren ?></div>
+                            <small>Nombre total dans votre ménage</small>
                         </div>
                     </div>
                 </div>
 
                 <div class="col-6 col-md-3">
-                    <div class="card shadow-sm h-100 border-0">
-                        <div class="card-body">
-                            <div class="text-muted small mb-1">Scolarité — À payer</div>
-                            <div class="h4 mb-1"><?= fmt_money($school_due) ?> $</div>
-                            <div class="small text-muted">Montant global (ménage)</div>
+                    <div class="card border-0 shadow-sm rounded-4">
+                        <div class="card-body text-center">
+                            <div class="text-muted small">💰 À payer</div>
+                            <div class="h4 fw-bold text-dark"><?= fmt_money($totalAnnuelAPayer) ?> $</div>
+                            <small>Montant global (ménage)</small>
                         </div>
                     </div>
                 </div>
 
                 <div class="col-6 col-md-3">
-                    <div class="card shadow-sm h-100 border-0">
-                        <div class="card-body">
-                            <div class="text-muted small mb-1">Scolarité — Payé</div>
-                            <div class="h4 mb-1 text-success"><?= fmt_money($school_paid) ?> $</div>
-                            <div class="small text-muted">Année <?= e($activeYear) ?></div>
+                    <div class="card border-0 shadow-sm rounded-4">
+                        <div class="card-body text-center">
+                            <div class="text-muted small">✅ Payé</div>
+                            <div class="h4 fw-bold text-success"><?= fmt_money($totalAnnuelPaye) ?> $</div>
+                            <small>Montant déjà payé durant l’année</small>
                         </div>
                     </div>
                 </div>
 
                 <div class="col-6 col-md-3">
-                    <div class="card shadow-sm h-100 border-0">
-                        <div class="card-body">
-                            <div class="text-muted small mb-1">Scolarité — Reste</div>
-                            <div class="h4 mb-1 text-danger"><?= fmt_money($school_rest) ?> $</div>
-                            <div class="small text-muted">Calculé = À payer − Payé</div>
+                    <div class="card border-0 shadow-sm rounded-4">
+                        <div class="card-body text-center">
+                            <div class="text-muted small">⛔ Reste</div>
+                            <div class="h4 fw-bold text-danger"><?= fmt_money($totalAnnuelReste) ?> $</div>
+                            <small>Montant à payer durant l’année</small>
                         </div>
                     </div>
                 </div>
+
             </div>
 
-            <!-- Montant par tranche -->
-            <div class="card shadow-sm mb-3 border-0">
-                <div class="card-header bg-white border-0 pb-2">
-                    <div class="d-flex justify-content-between align-items-center">
-                        <div>
-                            <h2 class="h6 mb-0">Montant par tranche</h2>
-                            <small class="text-muted">
-                                Référence : cycles des élèves — Scolarité + frais connexes intégrés en Tranche 1.
-                            </small>
+            <!-- ===== TRANCHE ===== -->
+            <div class="card border-0 shadow-sm rounded-4 mb-3">
+
+                <div class="card-header bg-white border-0 p-3">
+                    <div class="d-flex justify-content-between align-items-center card-header bg-white border-0">
+                        <div class="small text-muted">
+                            <strong>📊 Montant par tranche</strong> <br>
+                            Scolarité + frais connexes intégrés dans la première tranche
                         </div>
+                        <div class="div"><a href="finances.php" class="btn btn-primary btn-sm">Voir +</a></div>
                     </div>
                 </div>
-                <div class="card-body pt-2">
+
+                <div class="card-body">
+
                     <?php if (empty($nums)): ?>
+
                     <div class="alert alert-info mb-0">
-                        Aucune tranche trouvée pour vos enfants sur l’année
-                        <strong><?= e($activeYear) ?></strong>.
-                    </div>
-                    <?php else: ?>
-                    <!-- Bandeau synthèse annuelle -->
-                    <div class="row g-3 mb-3">
-                        <div class="col-md-4">
-                            <div class="border rounded p-2 h-100">
-                                <div class="small text-muted">Montant annuel à payer</div>
-                                <div class="fw-semibold"><?= fmt_money($totalAnnuelAPayer) ?> $</div>
-                            </div>
-                        </div>
-                        <div class="col-md-4">
-                            <div class="border rounded p-2 h-100">
-                                <div class="small text-muted">Montant payé (annuel)</div>
-                                <div class="fw-semibold text-primary"><?= fmt_money($totalAnnuelPaye) ?> $</div>
-                            </div>
-                        </div>
-                        <div class="col-md-4">
-                            <div class="border rounded p-2 h-100">
-                                <div class="small text-muted">Reste (annuel)</div>
-                                <div class="fw-semibold text-danger"><?= fmt_money($totalAnnuelReste) ?> $</div>
-                            </div>
-                        </div>
+                        Aucune tranche disponible.
                     </div>
 
+                    <?php else: ?>
+
+                    <!-- SUMMARY -->
+                    <div class="row g-2 mb-3">
+
+                        <div class="col-md-4">
+                            <div class="p-2 border rounded-3 bg-light text-center">
+                                <div class="small text-muted">À payer</div>
+                                <div class="fw-bold"><?= fmt_money($totalAnnuelAPayer) ?> $</div>
+                            </div>
+                        </div>
+
+                        <div class="col-md-4">
+                            <div class="p-2 border rounded-3 bg-light text-center">
+                                <div class="small text-muted">Payé</div>
+                                <div class="fw-bold text-primary"><?= fmt_money($totalAnnuelPaye) ?> $</div>
+                            </div>
+                        </div>
+
+                        <div class="col-md-4">
+                            <div class="p-2 border rounded-3 bg-light text-center">
+                                <div class="small text-muted">Reste</div>
+                                <div class="fw-bold text-danger"><?= fmt_money($totalAnnuelReste) ?> $</div>
+                            </div>
+                        </div>
+
+                    </div>
+
+                    <!-- TABLE -->
                     <div class="table-responsive">
-                        <table class="table table-sm align-middle mb-0">
+
+                        <table class="table table-sm align-middle">
+
                             <thead class="table-light">
                                 <tr>
                                     <th>Tranche</th>
                                     <th class="text-end">À payer</th>
-                                    <th class="text-end">Payé (alloué)</th>
+                                    <th class="text-end">Payé</th>
                                     <th class="text-end">Reste</th>
                                 </tr>
                             </thead>
-                            <tbody>
-                                <?php
-                                    $totPaidAlloc = 0.0;
-                                    $totReste     = 0.0;
-                                    foreach ($nums as $num):
-                                        $due  = (float)($apayerByTranche[$num] ?? 0.0);
-                                        $pay  = (float)($paidByTranche[$num] ?? 0.0);
-                                        $rest = (float)($resteByTranche[$num] ?? max($due - $pay, 0.0));
-                                        $totPaidAlloc += $pay;
-                                        $totReste     += $rest;
 
-                                        $labelSuffix = '';
-                                        if ((int)$num === (int)$trancheOneKey) {
-                                            $scolOnly = (float)($apayerByTrancheScolOnly[$trancheOneKey] ?? 0.0);
-                                            $labelSuffix =
-                                                '<br><small class="text-muted">'
-                                                .'Dont frais connexes : '.fmt_money($diversAPayerRef).' $ — '
-                                                .'Scolarité seule : '.fmt_money($scolOnly).' $'
-                                                .'</small>';
-                                        }
-                                    ?>
+                            <tbody>
+                                <?php foreach ($nums as $num): ?>
                                 <tr>
-                                    <td>
-                                        <strong>Tranche <?= (int)$num ?></strong>
-                                        <?= $labelSuffix ?>
+
+                                    <td class="fw-semibold">
+                                        Tranche <?= (int)$num ?>
                                     </td>
-                                    <td class="text-end"><?= fmt_money($due) ?> $</td>
-                                    <td class="text-end <?= $rest == 0.0 ? 'text-success' : '' ?>">
-                                        <?= fmt_money($pay) ?> $
+
+                                    <td class="text-end">
+                                        <?= fmt_money($apayerByTranche[$num]) ?> $
                                     </td>
-                                    <td class="text-end <?= $rest > 0.0 ? 'text-danger' : '' ?>">
-                                        <?= fmt_money($rest) ?> $
+
+                                    <td class="text-end text-success">
+                                        <?= fmt_money($paidByTranche[$num]) ?> $
                                     </td>
+
+                                    <td class="text-end text-danger">
+                                        <?= fmt_money($resteByTranche[$num]) ?> $
+                                    </td>
+
                                 </tr>
                                 <?php endforeach; ?>
                             </tbody>
-                            <tfoot class="table-light">
-                                <tr>
-                                    <th class="text-end">Totaux :</th>
-                                    <th class="text-end"><?= fmt_money($totalAPayerToutesTranches) ?> $</th>
-                                    <th class="text-end"><?= fmt_money($totPaidAlloc) ?> $</th>
-                                    <th class="text-end"><?= fmt_money($totReste) ?> $</th>
-                                </tr>
-                            </tfoot>
+
                         </table>
+
                     </div>
 
-                    <?php if ($pool > 0.0): ?>
-                    <div class="alert alert-success mt-3 mb-0">
-                        Surplus payé non affecté (au-delà de toutes les tranches) :
-                        <strong><?= fmt_money($pool) ?> $</strong>.
-                    </div>
                     <?php endif; ?>
-                    <?php endif; ?>
+
                 </div>
+
             </div>
 
-            <!-- Derniers paiements + annonces -->
+            <!-- ===== ENFANTS / ANNONCES ===== -->
             <div class="row g-3">
-                <div class="col-lg-6">
-                    <div class="card shadow-sm h-100 border-0">
-                        <div class="card-header bg-white border-0 pb-2">
-                            <strong>Derniers paiements (scolarité)</strong>
-                        </div>
-                        <div class="card-body table-responsive pt-2">
-                            <table class="table table-sm align-middle mb-0">
-                                <thead class="table-light">
-                                    <tr>
-                                        <th>Date</th>
-                                        <th class="text-end">Payé</th>
-                                        <th class="text-end">Reste</th>
-                                        <th>Obs.</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <?php if (!$lastPayments): ?>
-                                    <tr>
-                                        <td colspan="4"><em>Aucun paiement récent.</em></td>
-                                    </tr>
-                                    <?php else: foreach ($lastPayments as $p): ?>
-                                    <tr>
-                                        <td><?= e($p['dateCreated']) ?></td>
-                                        <td class="text-end text-success">
-                                            <?= fmt_money($p['montantPayer']) ?> $
-                                        </td>
-                                        <td class="text-end text-danger">
-                                            <?= fmt_money($p['resteAPayer']) ?> $
-                                        </td>
-                                        <td class="text-truncate" style="max-width:180px;">
-                                            <?= e((string)$p['observation'] ?: '—') ?>
-                                        </td>
-                                    </tr>
-                                    <?php endforeach; endif; ?>
-                                </tbody>
-                            </table>
-                        </div>
-                        <div class="card-footer bg-white border-0 pt-2">
-                            <a class="btn btn-sm btn-outline-primary" href="<?= BASE_URL ?>/finances.php">
-                                Voir tous les paiements
-                            </a>
-                        </div>
-                    </div>
-                </div>
 
-                <div class="col-lg-6">
-                    <div class="card shadow-sm h-100 border-0">
-                        <div class="card-header bg-white border-0 pb-2">
-                            <strong>Annonces</strong>
+                <!-- PAIMENTS -->
+                <div class="col-md-12">
+
+                    <div class="card border-0 shadow-sm rounded-4 h-100">
+
+                        <div class="d-flex justify-content-between align-items-center card-header bg-white border-0">
+                            <strong>💳 Derniers paiements</strong>
+                            <a href="finances.php" class="btn btn-primary btn-sm">Voir +</a>
                         </div>
-                        <div class="card-body pt-2">
-                            <?php if (!$annonces): ?>
-                            <div class="text-muted">Aucune annonce pour l’instant.</div>
-                            <?php else: foreach ($annonces as $a): ?>
-                            <div class="mb-3 pb-2 border-bottom">
-                                <div class="fw-semibold"><?= e($a['titre']) ?></div>
-                                <div class="small text-muted mb-1"><?= e($a['created_at']) ?></div>
-                                <div class="small"><?= nl2br(e($a['contenu'])) ?></div>
+
+                        <div class="card-body p-0 small">
+
+                            <?php if (!$lastPayments): ?>
+
+                            <div class="p-3 text-muted">
+                                Aucun paiement récent.
                             </div>
-                            <?php endforeach; endif; ?>
-                        </div>
-                        <div class="card-footer bg-white border-0 pt-2">
-                            <a class="btn btn-sm btn-outline-secondary" href="<?= BASE_URL ?>/annonces.php">
-                                Voir toutes les annonces
-                            </a>
+
+                            <?php else: ?>
+
+                            <!-- TABLE -->
+                            <div class="table-responsive p-3">
+
+                                <table class="table table-sm align-middle mb-0">
+
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>Date</th>
+                                            <th class="text-end">Montant</th>
+                                            <th class="text-end">Reste</th>
+                                            <th class="text-end">Obs.</th>
+                                        </tr>
+                                    </thead>
+
+                                    <tbody>
+
+                                        <?php foreach ($lastPayments as $p): ?>
+
+                                        <tr>
+
+                                            <td class="text-muted">
+                                                <?= e($p['dateCreated']) ?>
+                                            </td>
+
+                                            <td class="text-end text-success fw-semibold">
+                                                <?= fmt_money($p['montantPayer']) ?> $
+                                            </td>
+
+                                            <td class="text-end text-danger">
+                                                <?= fmt_money($p['resteAPayer']) ?> $
+                                            </td>
+                                            <td class="text-end text-danger">
+                                                <?= e($p['observation']) ?>
+                                            </td>
+
+                                        </tr>
+
+                                        <?php endforeach; ?>
+
+                                    </tbody>
+
+                                </table>
+
+                            </div>
+
+                            <?php endif; ?>
+
                         </div>
                     </div>
                 </div>
             </div>
+
         </div>
 
-        <!-- Colonne droite : Enfants -->
-        <div class="col-lg-4 col-sm-12 mt-3 mt-lg-0">
-            <div class="card shadow-sm border-0">
-                <div class="card-header bg-white border-0 pb-2 d-flex justify-content-between align-items-center">
-                    <strong>Mes enfants</strong>
-                    <span class="small text-muted">Cliquer sur <em>Se connecter</em></span>
+        <!-- ========================= -->
+        <!-- COLONNE DROITE -->
+        <!-- ========================= -->
+        <div class="col-lg-4">
+
+            <div class="card border-0 shadow-sm rounded-4">
+
+                <div class="card-header bg-white border-0">
+                    <strong>👨‍👩‍👧 Mes enfants</strong>
                 </div>
-                <div class="card-body table-responsive pt-2">
-                    <table class="table table-sm align-middle mb-0">
-                        <thead class="table-light">
-                            <tr>
-                                <th>#</th>
-                                <th>Nom complet</th>
-                                <th>Classe</th>
-                                <th style="width:1%;">Action</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <?php if (!$children): ?>
-                            <tr>
-                                <td colspan="5"><em>Aucun enfant enregistré.</em></td>
-                            </tr>
-                            <?php else: foreach ($children as $c): ?>
-                            <tr>
-                                <td><?= (int)$c['id'] ?></td>
-                                <td class="small">
-                                    <?= e($c['nom'].' '.$c['postnom'].' '.$c['prenom']) ?>
-                                </td>
-                                <td class="small"><?= e($c['classe_desc'] ?? '—') ?> <?= e($c['cycle_desc'] ?? '—') ?>
-                                </td>
-                                <td class="text-nowrap">
-                                    <a class="btn btn-sm btn-primary"
-                                        href="<?= BASE_URL ?>/eleve/switch.php?eleve_id=<?= (int)$c['id'] ?>">
-                                        Se connecter
-                                    </a>
-                                </td>
-                            </tr>
-                            <?php endforeach; endif; ?>
-                        </tbody>
-                    </table>
+
+                <div class="card-body p-0">
+
+                    <div class="list-group list-group-flush">
+
+                        <?php foreach ($children as $c): ?>
+
+                        <div class="list-group-item d-flex justify-content-between align-items-center">
+
+                            <div>
+                                <div class="fw-semibold small">
+                                    <?= e($c['nom'].' '.$c['postnom']) ?>
+                                </div>
+                                <div class="text-muted small">
+                                    <?= e($c['classe_desc']) ?> <?= e($c['cycle_desc']) ?>
+                                </div>
+                            </div>
+
+                            <a class="btn btn-sm btn-primary"
+                                href="<?= BASE_URL ?>/eleve/switch.php?eleve_id=<?= (int)$c['id'] ?>">
+                                Se connecter
+                            </a>
+                        </div>
+
+                        <?php endforeach; ?>
+
+                    </div>
                 </div>
             </div>
 
-            <div class="d-none mt-3">
-                <a href="<?= BASE_URL ?>/dashboard.php" class="btn btn-outline-secondary btn-sm w-100">
-                    ⟵ Retour tableau de bord général
-                </a>
+            <!-- ANNONCES -->
+            <div class="mt-3">
+                <div class="card">
+                    <div class="card border-0 shadow-sm rounded-4 h-100">
+
+                        <div class="d-flex justify-content-between align-items-center card-header bg-white border-0">
+                            <strong>📢 Annonces</strong>
+                            <a href="annonces.php" class="btn btn-secondary btn-sm">Voir +</a>
+                        </div>
+
+                        <div class="card-body small">
+                            <?php foreach ($annonces as $a): ?>
+                            <div class="mb-2 pb-2 border-bottom">
+                                <div class="fw-semibold"><?= e($a['titre']) ?></div>
+                                <div class="text-muted small"><?= e($a['created_at']) ?></div>
+                            </div>
+                            <?php endforeach; ?>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
