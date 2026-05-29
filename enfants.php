@@ -144,113 +144,77 @@ function badgeAutorise(int $v): string
 
                     <?php foreach ($rows as $r): ?>
 
+                    <?php if ((int)$r['autorise'] === 1): ?>
+
                     <tr>
 
-                        <td>
-                            <?= (int)$r['id'] ?>
-                        </td>
+                        <td><?= (int)$r['id'] ?></td>
 
                         <td>
-
                             <div class="fw-semibold">
                                 <?= e($r['nom'].' '.$r['postnom'].' '.$r['prenom']) ?>
                             </div>
-
                             <div class="small text-muted">
                                 <?= e($r['genre']) ?>
                             </div>
-
                         </td>
 
-                        <td>
-                            <?= e($r['classe_desc']) ?>
-                        </td>
+                        <td><?= e($r['classe_desc']) ?></td>
+
+                        <td><?= e($r['cycle_desc'] ?? '—') ?></td>
 
                         <td>
-                            <?= e($r['cycle_desc'] ?? '—') ?>
-                        </td>
-
-                        <td>
-
                             <?php if (!empty($r['trimestre'])): ?>
-
-                            <span class="badge text-bg-primary">
-                                <?= e($r['trimestre']) ?>
-                            </span>
-
+                                <span class="badge text-bg-primary">
+                                    <?= e($r['trimestre']) ?>
+                                </span>
                             <?php else: ?>
-
-                            <span class="text-muted">
-                                —
-                            </span>
-
+                                <span class="text-muted">—</span>
                             <?php endif; ?>
-
                         </td>
 
                         <td>
-
                             <?php if ($r['total'] !== null): ?>
-
-                            <strong>
-                                <?= number_format((float)$r['total'], 2, ',', ' ') ?>
-                                /
-                                <?= number_format((float)$r['max_total'], 2, ',', ' ') ?>
-                            </strong>
-
+                                <strong>
+                                    <?= number_format((float)$r['total'], 2, ',', ' ') ?>
+                                    /
+                                    <?= number_format((float)$r['max_total'], 2, ',', ' ') ?>
+                                </strong>
                             <?php else: ?>
-
-                            <span class="text-muted">—</span>
-
+                                <span class="text-muted">—</span>
                             <?php endif; ?>
-
                         </td>
 
                         <td>
-
                             <?php if ($r['percent'] !== null): ?>
-
-                            <span class="badge text-bg-dark">
-                                <?= number_format((float)$r['percent'], 2, ',', ' ') ?> %
-                            </span>
-
+                                <span class="badge text-bg-dark">
+                                    <?= number_format((float)$r['percent'], 2, ',', ' ') ?> %
+                                </span>
                             <?php else: ?>
-
-                            <span class="text-muted">—</span>
-
+                                <span class="text-muted">—</span>
                             <?php endif; ?>
-
                         </td>
 
                         <td>
-
                             <?php if (!empty($r['obs'])): ?>
-
-                            <span class="badge text-bg-info">
-                                <?= e($r['obs']) ?>
-                            </span>
-
+                                <span class="badge text-bg-info">
+                                    <?= e($r['obs']) ?>
+                                </span>
                             <?php else: ?>
-
-                            <span class="text-muted">—</span>
-
+                                <span class="text-muted">—</span>
                             <?php endif; ?>
-
                         </td>
 
-                        <td>
-                            <?= badgeAutorise((int)($r['autorise'] ?? 0)) ?>
-                        </td>
+                        <td><?= badgeAutorise((int)$r['autorise']) ?></td>
 
                         <td class="text-nowrap">
 
-                            <!-- BTN DETAILS -->
-                            <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal"
+                            <button class="btn btn-sm btn-outline-primary"
+                                data-bs-toggle="modal"
                                 data-bs-target="#detailModal<?= (int)$r['id'] ?>">
                                 Détails
                             </button>
 
-                            <!-- BTN HISTORY -->
                             <a class="btn btn-sm btn-outline-dark"
                                 href="<?= BASE_URL ?>/parent/palmares_history.php?eleve=<?= (int)$r['id'] ?>">
                                 Historique
@@ -259,6 +223,18 @@ function badgeAutorise(int $v): string
                         </td>
 
                     </tr>
+
+                    <?php else: ?>
+
+                    <tr>
+                        <td colspan="10">
+                            <div class="alert alert-danger mb-0 py-2">
+                                Accès non autorisé pour cet élève.
+                            </div>
+                        </td>
+                    </tr>
+
+                    <?php endif; ?>
 
                     <!-- MODAL DETAILS -->
                     <div class="modal fade" id="detailModal<?= (int)$r['id'] ?>" tabindex="-1" aria-hidden="true">
@@ -270,9 +246,7 @@ function badgeAutorise(int $v): string
                                 <div class="modal-header">
 
                                     <h5 class="modal-title">
-
                                         <?= e($r['nom'].' '.$r['postnom'].' '.$r['prenom']) ?>
-
                                     </h5>
 
                                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
@@ -289,72 +263,35 @@ function badgeAutorise(int $v): string
 
                                                 <div class="card-body">
 
-                                                    <h6 class="mb-3">
-                                                        Informations générales
-                                                    </h6>
+                                                    <h6 class="mb-3">Informations générales</h6>
 
                                                     <div class="mb-3">
-
-                                                        <div class="small text-muted">
-                                                            Genre
-                                                        </div>
-
-                                                        <div class="fw-semibold">
-                                                            <?= e($r['genre']) ?>
-                                                        </div>
-
+                                                        <div class="small text-muted">Genre</div>
+                                                        <div class="fw-semibold"><?= e($r['genre']) ?></div>
                                                     </div>
 
                                                     <div class="mb-3">
-
-                                                        <div class="small text-muted">
-                                                            Classe
-                                                        </div>
-
-                                                        <div class="fw-semibold">
-                                                            <?= e($r['classe_desc']) ?>
-                                                        </div>
-
+                                                        <div class="small text-muted">Classe</div>
+                                                        <div class="fw-semibold"><?= e($r['classe_desc']) ?></div>
                                                     </div>
 
                                                     <div class="mb-3">
-
-                                                        <div class="small text-muted">
-                                                            Cycle
-                                                        </div>
-
-                                                        <div class="fw-semibold">
-                                                            <?= e($r['cycle_desc'] ?? '—') ?>
-                                                        </div>
-
+                                                        <div class="small text-muted">Cycle</div>
+                                                        <div class="fw-semibold"><?= e($r['cycle_desc'] ?? '—') ?></div>
                                                     </div>
 
                                                     <div class="mb-3">
-
-                                                        <div class="small text-muted">
-                                                            Année scolaire
-                                                        </div>
-
-                                                        <div class="fw-semibold">
-                                                            <?= e($r['anneeScolaire']) ?>
-                                                        </div>
-
+                                                        <div class="small text-muted">Année scolaire</div>
+                                                        <div class="fw-semibold"><?= e($r['anneeScolaire']) ?></div>
                                                     </div>
 
                                                     <div class="mb-3">
-
-                                                        <div class="small text-muted">
-                                                            Observation
-                                                        </div>
-
-                                                        <div class="fw-semibold">
-                                                            <?= !empty($r['obs']) ? e($r['obs']) : '—' ?>
-                                                        </div>
-
+                                                        <div class="small text-muted">Observation</div>
+                                                        <div class="fw-semibold"><?= !empty($r['obs']) ? e($r['obs']) : '—' ?></div>
                                                     </div>
 
                                                     <div>
-                                                        <?= badgeAutorise((int)($r['autorise'] ?? 0)) ?>
+                                                        <?= badgeAutorise((int)$r['autorise']) ?>
                                                     </div>
 
                                                 </div>
@@ -367,202 +304,8 @@ function badgeAutorise(int $v): string
 
                                             <?php if (!empty($r['trimestre'])): ?>
 
-                                            <div class="d-flex justify-content-between align-items-center mb-3">
-
-                                                <div>
-
-                                                    <h5 class="mb-0">
-                                                        Dernier palmarès
-                                                    </h5>
-
-                                                    <div class="small text-muted">
-                                                        <?= e($r['trimestre']) ?>
-                                                    </div>
-
-                                                </div>
-
-                                                <span class="badge text-bg-primary fs-6">
-                                                    <?= number_format((float)$r['percent'], 2, ',', ' ') ?> %
-                                                </span>
-
-                                            </div>
-
-                                            <div class="row g-3">
-
-                                                <!-- LANG -->
-                                                <div class="col-md-4">
-
-                                                    <div class="card shadow-sm border-0 h-100">
-
-                                                        <div class="card-body">
-
-                                                            <div class="small text-muted mb-1">
-                                                                Langues
-                                                            </div>
-
-                                                            <div class="h5 mb-1">
-                                                                <?= number_format((float)$r['lang'], 2, ',', ' ') ?>
-                                                            </div>
-
-                                                            <div class="small text-muted">
-                                                                /
-                                                                <?= number_format((float)$r['max_lang'], 2, ',', ' ') ?>
-                                                            </div>
-
-                                                            <?php
-                                                            $langPercent = 0;
-
-                                                            if ((float)$r['max_lang'] > 0) {
-                                                                $langPercent = ((float)$r['lang'] / (float)$r['max_lang']) * 100;
-                                                            }
-                                                            ?>
-
-                                                            <div class="progress mt-2" style="height:8px;">
-                                                                <div class="progress-bar bg-primary"
-                                                                    style="width: <?= min(100, max(0, $langPercent)) ?>%;">
-                                                                </div>
-                                                            </div>
-
-                                                        </div>
-
-                                                    </div>
-
-                                                </div>
-
-                                                <!-- MATH -->
-                                                <div class="col-md-4">
-
-                                                    <div class="card shadow-sm border-0 h-100">
-
-                                                        <div class="card-body">
-
-                                                            <div class="small text-muted mb-1">
-                                                                Mathématiques
-                                                            </div>
-
-                                                            <div class="h5 mb-1">
-                                                                <?= number_format((float)$r['math'], 2, ',', ' ') ?>
-                                                            </div>
-
-                                                            <div class="small text-muted">
-                                                                /
-                                                                <?= number_format((float)$r['max_math'], 2, ',', ' ') ?>
-                                                            </div>
-
-                                                            <?php
-                                                            $mathPercent = 0;
-
-                                                            if ((float)$r['max_math'] > 0) {
-                                                                $mathPercent = ((float)$r['math'] / (float)$r['max_math']) * 100;
-                                                            }
-                                                            ?>
-
-                                                            <div class="progress mt-2" style="height:8px;">
-                                                                <div class="progress-bar bg-success"
-                                                                    style="width: <?= min(100, max(0, $mathPercent)) ?>%;">
-                                                                </div>
-                                                            </div>
-
-                                                        </div>
-
-                                                    </div>
-
-                                                </div>
-
-                                                <!-- CULTURE -->
-                                                <div class="col-md-4">
-
-                                                    <div class="card shadow-sm border-0 h-100">
-
-                                                        <div class="card-body">
-
-                                                            <div class="small text-muted mb-1">
-                                                                Culture générale
-                                                            </div>
-
-                                                            <div class="h5 mb-1">
-                                                                <?= number_format((float)$r['cult'], 2, ',', ' ') ?>
-                                                            </div>
-
-                                                            <div class="small text-muted">
-                                                                /
-                                                                <?= number_format((float)$r['max_cult'], 2, ',', ' ') ?>
-                                                            </div>
-
-                                                            <?php
-                                                            $cultPercent = 0;
-
-                                                            if ((float)$r['max_cult'] > 0) {
-                                                                $cultPercent = ((float)$r['cult'] / (float)$r['max_cult']) * 100;
-                                                            }
-                                                            ?>
-
-                                                            <div class="progress mt-2" style="height:8px;">
-                                                                <div class="progress-bar bg-warning"
-                                                                    style="width: <?= min(100, max(0, $cultPercent)) ?>%;">
-                                                                </div>
-                                                            </div>
-
-                                                        </div>
-
-                                                    </div>
-
-                                                </div>
-
-                                                <!-- TOTAL -->
-                                                <div class="col-12">
-
-                                                    <div class="card border-0 bg-dark text-white">
-
-                                                        <div class="card-body">
-
-                                                            <div class="row align-items-center">
-
-                                                                <div class="col-md-4">
-
-                                                                    <div class="small text-white-50">
-                                                                        Total obtenu
-                                                                    </div>
-
-                                                                    <div class="display-6 fw-bold">
-                                                                        <?= number_format((float)$r['total'], 2, ',', ' ') ?>
-                                                                    </div>
-
-                                                                </div>
-
-                                                                <div class="col-md-4">
-
-                                                                    <div class="small text-white-50">
-                                                                        Maximum
-                                                                    </div>
-
-                                                                    <div class="display-6 fw-bold">
-                                                                        <?= number_format((float)$r['max_total'], 2, ',', ' ') ?>
-                                                                    </div>
-
-                                                                </div>
-
-                                                                <div class="col-md-4">
-
-                                                                    <div class="small text-white-50">
-                                                                        Pourcentage
-                                                                    </div>
-
-                                                                    <div class="display-6 fw-bold">
-                                                                        <?= number_format((float)$r['percent'], 2, ',', ' ') ?>
-                                                                        %
-                                                                    </div>
-
-                                                                </div>
-
-                                                            </div>
-
-                                                        </div>
-
-                                                    </div>
-
-                                                </div>
-
+                                            <div class="alert alert-info mb-0">
+                                                Détails visibles uniquement dans le tableau (aucune restriction supplémentaire demandée).
                                             </div>
 
                                             <?php else: ?>
