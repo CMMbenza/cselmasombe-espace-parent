@@ -66,7 +66,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($action === 'complete_account') {
 
         $menage_id = (int)($_POST['menage_id'] ?? 0);
-        $email = trim($_POST['email'] ?? '');
+        $email = 'informatique@cselmasombe.org';
         $password = trim($_POST['password'] ?? '');
         $confirm = trim($_POST['confirm_password'] ?? '');
 
@@ -78,18 +78,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!$menage) {
 
             $error = "Compte introuvable.";
-
-        } elseif (empty($email)) {
-
-            $error = "Veuillez saisir votre email.";
-            $showCompleteForm = true;
-            $menageData = $menage;
-
-        } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-
-            $error = "Adresse email invalide.";
-            $showCompleteForm = true;
-            $menageData = $menage;
 
         } elseif (strlen($password) < 4) {
 
@@ -380,17 +368,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <input type="hidden" name="action" value="complete_account">
 
                         <input type="hidden" name="menage_id" value="<?= (int)$menageData['id'] ?>">
-
-                        <div class="mb-3">
-
-                            <label class="form-label">
-                                Adresse Email
-                            </label>
-
-                            <input type="email" name="email" class="form-control" placeholder="Votre adresse email"
-                                required>
-
-                        </div>
 
                         <div class="mb-3">
 
