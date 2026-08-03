@@ -4,8 +4,12 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../includes/auth.php';
 require_parent();
+require_once __DIR__ . '/../get_annee_scolaire_enours.php';
 require_once __DIR__ . '/../layout/header.php';
 require_once __DIR__ . '/../layout/navbar.php';
+
+// Récupération globale de l'année scolaire en cours (ex: "2026-2027")
+$anneeScolaire = $ANNEE_SCOLAIRE_EN_COURS ?? null;
 
 $mid = (int)($_SESSION['parent']['id'] ?? 0);
 $eid = (int)get_current_eleve_id();
@@ -21,7 +25,7 @@ $stmt = $pdo->prepare("
     e.id, 
     e.classe, 
     c.description AS classe_desc, 
-    c.cycle      AS cycle_id,
+    c.cycle       AS cycle_id,
     cy.description AS cycle_desc
   FROM eleve e
   JOIN classe c ON c.id = e.classe
@@ -47,10 +51,10 @@ $presence = [
   'taux'    => 0.0,
 ];
 
-// Mois courant au format YYYY-MM (ex. 2025-11)
+// Mois courant au format YYYY-MM
 $currentYm = date('Y-m');
 
-$pStmt = $pdo->prepare("
+$pSql = "
   SELECT 
     COUNT(*) AS total,
     SUM(CASE WHEN ad.statut = 'present' THEN 1 ELSE 0 END) AS present,
@@ -59,9 +63,19 @@ $pStmt = $pdo->prepare("
   JOIN appel a ON a.id = ad.appel_id
   WHERE ad.eleve_id = :eid
     AND DATE_FORMAT(a.date_appel, '%Y-%m') = :ym
-");
-$pStmt->execute([':eid' => $eid, ':ym' => $currentYm]);
+";
+
+$pParams = [':eid' => $eid, ':ym' => $currentYm];
+
+if (!empty($anneeScolaire)) {
+  $pSql .= " AND a.anneeScolaire = :annee ";
+  $pParams[':annee'] = $anneeScolaire;
+}
+
+$pStmt = $pdo->prepare($pSql);
+$pStmt->execute($pParams);
 $presRow = $pStmt->fetch(PDO::FETCH_ASSOC);
+
 if ($presRow) {
   $presence['total']   = (int)($presRow['total'] ?? 0);
   $presence['present'] = (int)($presRow['present'] ?? 0);
@@ -73,12 +87,11 @@ if ($presRow) {
 }
 
 // ===============================
-// 1.bis) Présence détaillée par mois (derniers mois)
+// 1.bis) Présence détaillée par mois (derniers mois de l'année scolaire)
 // ===============================
-$presenceByMonth = []; // [ '2025-01' => [total, present, absent, taux] ]
+$presenceByMonth = [];
 
-// Ici on suppose que la colonne s'appelle `date_appel` dans `appel`
-$pmStmt = $pdo->prepare("
+$pmSql = "
   SELECT 
     DATE_FORMAT(a.date_appel, '%Y-%m') AS ym,
     COUNT(*) AS total,
@@ -87,11 +100,20 @@ $pmStmt = $pdo->prepare("
   FROM appel_detail ad
   JOIN appel a ON a.id = ad.appel_id
   WHERE ad.eleve_id = :eid
-  GROUP BY ym
-  ORDER BY ym DESC
-  LIMIT 6
-");
-$pmStmt->execute([':eid' => $eid]);
+";
+
+$pmParams = [':eid' => $eid];
+
+if (!empty($anneeScolaire)) {
+  $pmSql .= " AND a.anneeScolaire = :annee ";
+  $pmParams[':annee'] = $anneeScolaire;
+}
+
+$pmSql .= " GROUP BY ym ORDER BY ym DESC LIMIT 6";
+
+$pmStmt = $pdo->prepare($pmSql);
+$pmStmt->execute($pmParams);
+
 while ($row = $pmStmt->fetch(PDO::FETCH_ASSOC)) {
   $total   = (int)($row['total'] ?? 0);
   $present = (int)($row['present'] ?? 0);
@@ -107,11 +129,12 @@ while ($row = $pmStmt->fetch(PDO::FETCH_ASSOC)) {
 }
 
 // ===============================
-// 2) Chargement des quiz de la classe
+// 2) Chargement des quiz de la classe pour l'année en cours
 // ===============================
 $q = trim((string)($_GET['q'] ?? ''));
 
 $params = [':cid' => (int)$el['classe']];
+
 $sql = "
   SELECT 
     q.id, 
@@ -131,10 +154,16 @@ $sql = "
     AND q.statut = 'approuvé'
 ";
 
+if (!empty($anneeScolaire)) {
+  $sql .= " AND q.anneeScolaire = :annee ";
+  $params[':annee'] = $anneeScolaire;
+}
+
 if ($q !== '') {
   $sql .= " AND q.titre LIKE :like ";
   $params[':like'] = '%'.$q.'%';
 }
+
 $sql .= " ORDER BY COALESCE(q.date_limite, q.created_at) DESC, q.id DESC";
 
 $st = $pdo->prepare($sql);
@@ -145,7 +174,7 @@ $quizzes = $st->fetchAll(PDO::FETCH_ASSOC);
 // 3) Soumissions de l'élève
 // ===============================
 $quizIds = array_map(fn($r) => (int)$r['id'], $quizzes);
-$subsByQuiz = []; // quiz_id => submission row
+$subsByQuiz = [];
 
 if ($quizIds) {
   $in   = implode(',', array_fill(0, count($quizIds), '?'));
@@ -176,10 +205,8 @@ $done = [];
 $expired = [];
 
 foreach ($quizzes as $qz) {
-
   $qid = (int)$qz['id'];
 
-  // déjà remis
   if (isset($subsByQuiz[$qid])) {
     $done[] = [
       'quiz' => $qz,
@@ -188,9 +215,7 @@ foreach ($quizzes as $qz) {
     continue;
   }
 
-  // vérifier expiration
   $isExpired = false;
-
   if (!empty($qz['date_limite'])) {
     $isExpired = strtotime($qz['date_limite'].' 23:59:59') < time();
   }
@@ -206,8 +231,8 @@ foreach ($quizzes as $qz) {
 // 5) Stats devoirs
 // ===============================
 $totalDevoirs = count($quizzes);
-$totalAFaire  = count($toDo);
-$totalRemis   = count($done);
+$totalAFaire   = count($toDo);
+$totalRemis    = count($done);
 $totalExpired = count($expired);
 
 // ===============================
@@ -215,19 +240,16 @@ $totalExpired = count($expired);
 // ===============================
 $perPage = 5;
 
-// page à faire
 $pageTodo = max(1, (int)($_GET['page_todo'] ?? 1));
 $totalTodoPages = max(1, (int)ceil(count($toDo) / $perPage));
 $offsetTodo = ($pageTodo - 1) * $perPage;
 $toDoPaginated = array_slice($toDo, $offsetTodo, $perPage);
 
-// page remis
 $pageDone = max(1, (int)($_GET['page_done'] ?? 1));
 $totalDonePages = max(1, (int)ceil(count($done) / $perPage));
 $offsetDone = ($pageDone - 1) * $perPage;
 $donePaginated = array_slice($done, $offsetDone, $perPage);
 
-// page expirés
 $pageExpired = max(1, (int)($_GET['page_expired'] ?? 1));
 $totalExpiredPages = max(1, (int)ceil(count($expired) / $perPage));
 $offsetExpired = ($pageExpired - 1) * $perPage;
@@ -236,8 +258,8 @@ $expiredPaginated = array_slice($expired, $offsetExpired, $perPage);
 // ===============================
 // 6) Historique des notes par cours + Forces
 // ===============================
-$notesByCourse = []; // [titre_cours] => [ [date, note, statut], ... ]
-$forces        = []; // [titre_cours] => ['sum'=>x, 'count'=>n]
+$notesByCourse = [];
+$forces        = [];
 
 foreach ($done as $row) {
   $qz  = $row['quiz'];
@@ -289,17 +311,26 @@ if ($forces) {
 // 7) Périodes + progression par période
 // ===============================
 $periodes = [];
-$notesByPeriod = []; // [periode_id] => ['sum'=>x,'count'=>n]
+$notesByPeriod = [];
 
 $cycleId = (int)($el['cycle_id'] ?? 0);
 if ($cycleId > 0) {
-  $pStmt2 = $pdo->prepare("
+  $pSql2 = "
     SELECT id, CODE, libelle
     FROM periodes
     WHERE cycle_id = :cid AND actif = 1
-    ORDER BY ordre
-  ");
-  $pStmt2->execute([':cid' => $cycleId]);
+  ";
+  $pParams2 = [':cid' => $cycleId];
+
+  if (!empty($anneeScolaire)) {
+    $pSql2 .= " AND anneeScolaire = :annee ";
+    $pParams2[':annee'] = $anneeScolaire;
+  }
+
+  $pSql2 .= " ORDER BY ordre";
+
+  $pStmt2 = $pdo->prepare($pSql2);
+  $pStmt2->execute($pParams2);
   $periodes = $pStmt2->fetchAll(PDO::FETCH_ASSOC);
 }
 
@@ -353,6 +384,7 @@ function badge_statut(string $statut): string {
   return '<span class="badge text-bg-'.$cls.'">'.htmlspecialchars($statut, ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8').'</span>';
 }
 ?>
+
 <div class="container">
 
     <div class="d-flex flex-wrap justify-content-between align-items-center mb-3">
@@ -380,9 +412,13 @@ function badge_statut(string $statut): string {
         <div class="col-12">
             <div class="d-flex flex-wrap gap-2">
                 <a class="btn btn-dark btn-sm" href="<?= BASE_URL ?>/dashboard.php">&larr; Retour tableau de bord</a>
-                <a href="../eleve/classe.php" class="btn btn-outline-primary btn-sm">Ma classe & professeurs</a>
-                <a href="../eleve/quizzes.php" class="btn btn-primary btn-sm">Travail à faire</a>
-                <a href="../eleve/my_submissions.php" class="btn btn-outline-secondary btn-sm">Mes travaux remis</a>
+                <!-- <a href="../eleve/classe.php" class="btn btn-outline-primary btn-sm">Ma classe & professeurs</a> -->
+                <a href="../eleve/journal.php" class="btn btn-outline-primary btn-sm">Journal de classe</a>
+                <a href="../eleve/horaire.php" class="btn btn-outline-primary btn-sm">Horaire de classe</a>
+                <a href="../eleve/cours.php" class="btn btn-outline-primary btn-sm">Cours/Resumé</a>
+                <!-- <a href="../eleve/quizzes.php" class="btn btn-primary btn-sm">Travail à faire</a> -->
+                <!-- <a href="../eleve/my_submissions.php" class="btn btn-outline-secondary btn-sm">Mes travaux remis</a> -->
+                <a href="../eleve/quizzes_liste.php" class="btn btn-outline-secondary btn-sm">Mes travaux</a>
             </div>
         </div>
     </div>
@@ -447,6 +483,10 @@ function badge_statut(string $statut): string {
 
                         </div>
 
+                    </div>
+
+                    <div class="text-center mt-3">
+                        <a href="presences.php" class="btn btn-primary w-100">Mes présences</a>
                     </div>
 
                 </div>

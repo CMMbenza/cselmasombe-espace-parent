@@ -1,0 +1,24 @@
+# Fichiers d'environnement et secrets
+.env
+.env.local
+.env.*.local
+
+# Dépendances Composer & Node (si tu en utilises)
+/vendor/
+/node_modules/
+
+# Logs et fichiers temporaires
+*.log
+/tmp/
+/cache/
+
+# Fichiers envoyés par les utilisateurs (uploads)
+/uploads/*
+!/uploads/.gitkeep
+
+# Fichiers système / IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp

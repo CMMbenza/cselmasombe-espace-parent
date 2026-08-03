@@ -30,7 +30,7 @@ $childSelected = get_current_eleve_id() > 0;
 
         <?php $a = is_active(['/enfants.php'], $uriPath); ?>
         <li class="nav-item">
-          <a class="nav-link <?= $a ?>" <?= aria_current($a) ?> href="<?= BASE_URL ?>/enfants.php">Mes enfants</a>
+          <a class="nav-link <?= $a ?>" <?= aria_current($a) ?> href="<?= BASE_URL ?>/palmares.php">Palmares</a>
         </li>
 
         <?php $a = is_active(['/finances.php'], $uriPath); ?>
@@ -40,7 +40,7 @@ $childSelected = get_current_eleve_id() > 0;
 
         <?php $a = is_active(['/annonces.php'], $uriPath); ?>
         <li class="nav-item">
-          <a class="nav-link <?= $a ?>" <?= aria_current($a) ?> href="<?= BASE_URL ?>/annonces.php">Annonces</a>
+          <a class="nav-link <?= $a ?>" <?= aria_current($a) ?> href="<?= BASE_URL ?>/annonces.php">Communiqués/Annonces</a>
         </li>
 
         <!--<?php if ($childSelected): ?>-->
