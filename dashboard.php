@@ -36,14 +36,19 @@ if ($activeYear && preg_match('/^\d{4}$/', (string)$activeYear)) {
     $activeYear = $y . '-' . ($y + 1);
 }
 
-// --- Infos ménage de base ---
-$school_due = 0.0;
+// --- Infos ménage de base (Montant à payer = montantAPayer + montantAPayerFC) ---
+$totalAnnuelAPayer = 0.0;
 try {
-    $st = $pdo->prepare("SELECT COALESCE(montantAPayer,0) FROM menage WHERE id=:mid LIMIT 1");
-    $st->execute([':mid'=>$menageId]);
-    $school_due = (float)($st->fetchColumn() ?: 0);
+    $st = $pdo->prepare("
+        SELECT (COALESCE(montantAPayer, 0) + COALESCE(montantAPayerFC, 0)) AS total_a_payer 
+        FROM menage 
+        WHERE id = :mid 
+        LIMIT 1
+    ");
+    $st->execute([':mid' => $menageId]);
+    $totalAnnuelAPayer = (float)($st->fetchColumn() ?: 0);
 } catch (Throwable $e) {
-    $school_due = 0.0;
+    $totalAnnuelAPayer = 0.0;
 }
 
 // --- Enfants du ménage (avec classe + cycle) ---
@@ -97,8 +102,14 @@ try {
     $totalDiversPayer = 0.0;
 }
 
+// Total Payé global (Frais scolaires + Frais divers)
+$totalAnnuelPaye = $school_paid + $totalDiversPayer;
+
+// Soustraction directe pour trouver le reste
+$totalAnnuelReste = max($totalAnnuelAPayer - $totalAnnuelPaye, 0.0);
+
 /* ============================================================
-   4. LOGIQUE "Montant par tranche / Annuel à payer"
+   LOGIQUE "Montant par tranche / Annuel à payer"
    ============================================================ */
 $diversAPayerRef          = 0.0;
 $apayerByTranche          = [];
@@ -106,13 +117,9 @@ $paidByTranche            = [];
 $resteByTranche           = [];
 $tranchesNums             = [];
 $nums                     = [];
-$totalAnnuelAPayer        = 0.0;
-$totalAnnuelPaye          = 0.0;
-$totalAnnuelReste         = 0.0;
 
 try {
     if ($nbChildren > 0) {
-        // 1) Montant de référence DIVERS
         $st = $pdo->prepare("
             SELECT COALESCE(SUM(s2.montant),0) AS total_divers_tarif
             FROM eleve e
@@ -126,7 +133,6 @@ try {
         $row = $st->fetch(PDO::FETCH_ASSOC);
         $diversAPayerRef = $row ? (float)$row['total_divers_tarif'] : 0.0;
 
-        // 2) Montant à payer par tranche
         $st = $pdo->prepare("
             SELECT 
               t.numero_tranche AS num,
@@ -149,7 +155,6 @@ try {
             $tranchesNums[$num]    = true;
         }
 
-        // 3) Première tranche
         $trancheOneKey = 1;
         if (!empty($tranchesNums)) {
             $numsTmp = array_keys($tranchesNums);
@@ -158,29 +163,16 @@ try {
             $trancheOneKey = in_array(1, $numsTmp, true) ? 1 : (int)$numsTmp[0];
         }
 
-        // 4) Injection DIVERS dans tranche 1
         if (!isset($apayerByTranche[$trancheOneKey])) {
             $apayerByTranche[$trancheOneKey] = 0.0;
         }
         $apayerByTranche[$trancheOneKey] += (float)$diversAPayerRef;
         $tranchesNums[$trancheOneKey] = true;
 
-        // 5) Ordonner les tranches
         $nums = array_keys($tranchesNums);
         $nums = array_map('intval', $nums);
         sort($nums);
 
-        $totalAPayerToutesTranches = 0.0;
-        foreach ($nums as $n) {
-            $totalAPayerToutesTranches += (float)($apayerByTranche[$n] ?? 0.0);
-        }
-
-        // 6) Synthèse globale
-        $totalAnnuelAPayer = $totalAPayerToutesTranches > 0 ? $totalAPayerToutesTranches : $school_due;
-        $totalAnnuelPaye   = $school_paid + $totalDiversPayer;
-        $totalAnnuelReste  = max($totalAnnuelAPayer - $totalAnnuelPaye, 0.0);
-
-        // 7) Cascade de paiement par tranche
         $pool = $totalAnnuelPaye;
         foreach ($nums as $n) {
             $due  = (float)($apayerByTranche[$n] ?? 0.0);
@@ -194,29 +186,61 @@ try {
 
 
 /* ============================================================
-   2.  (Scolaire + Connexe)
+   2. REQUÊTES PAIEMENTS SÉPARÉES & FUSION PHP
    ============================================================ */
-$lastPayments = [];
+
+// 1. Paiements scolaires
+$lastPaymentsSchool = [];
 try {
     $st = $pdo->prepare("
-        SELECT 'Frais scolaire' AS type_frais, montantAPayer, montantPayer, resteAPayer, observation, dateCreated
+        SELECT montantAPayer, montantPayer, resteAPayer, observation, dateCreated
         FROM paiement
         WHERE menage = :mid AND anneeScolaire = :yr
-        
-        UNION ALL
-        
-        SELECT 'Frais connexe (divers)' AS type_frais, montantAPayer, montantPayer, resteAPayer, observation, dateCreated
+        ORDER BY dateCreated DESC
+        LIMIT 1
+    ");
+    $st->execute([':mid' => $menageId, ':yr' => $activeYear]);
+    $lastPaymentsSchool = $st->fetchAll(PDO::FETCH_ASSOC);
+} catch (Throwable $e) {
+    $lastPaymentsSchool = [];
+}
+
+// 2. Paiements divers / connexes
+$lastPaymentsDivers = [];
+try {
+    $st = $pdo->prepare("
+        SELECT 
+        'Frais connexe' AS type_frais, 
+        montantAPayer, 
+        montantPayer, 
+        resteAPayer, 
+        observation, 
+        dateCreated
         FROM paiement_divers
         WHERE menage = :mid AND anneeScolaire = :yr
-        
         ORDER BY dateCreated DESC
-        LIMIT 5
+        LIMIT 1
     ");
-    $st->execute([':mid'=>$menageId, ':yr'=>$activeYear]);
-    $lastPayments = $st->fetchAll(PDO::FETCH_ASSOC);
+    $st->execute([':mid' => $menageId, ':yr' => $activeYear]);
+    $lastPaymentsDivers = $st->fetchAll(PDO::FETCH_ASSOC);
 } catch (Throwable $e) {
-    $lastPayments = [];
+    $lastPaymentsDivers = [];
 }
+
+// 3. Fusion et tri côté PHP (Contourne l'erreur de collation MySQL)
+$schoolFormatted = array_map(function($item) {
+    $item['type_frais'] = 'Frais scolaire';
+    return $item;
+}, $lastPaymentsSchool);
+
+$combinedPayments = array_merge($schoolFormatted, $lastPaymentsDivers);
+
+usort($combinedPayments, function($a, $b) {
+    return strtotime($b['dateCreated']) <=> strtotime($a['dateCreated']);
+});
+
+$allLastPayments = array_slice($combinedPayments, 0, 5);
+
 
 /* ============================================================
    3. ANNONCES (3 dernières annonces)
@@ -315,174 +339,170 @@ try {
         </div>
 
         <div class="col-lg-8">
-        <!-- TRANCHES -->
-        <div class="card border-0 shadow-sm rounded-4 mb-3">
-            <div class="card-header bg-white border-0 p-3">
-                <div class="d-flex justify-content-between align-items-center">
-                    <div class="small text-muted">
-                        <strong>📊 Montant par tranche</strong> <br>
-                        Scolarité + frais connexes intégrés dans la première tranche
-                    </div>
-                    <div><a href="finances.php" class="btn btn-primary btn-sm">Voir +</a></div>
-                </div>
-            </div>
-
-            <div class="card-body">
-                <?php if (empty($nums)): ?>
-                <div class="alert alert-info mb-0">Aucune tranche disponible.</div>
-                <?php else: ?>
-                <div class="row g-2 mb-3">
-                    <div class="col-md-4">
-                        <div class="p-2 border rounded-3 bg-light text-center">
-                            <div class="small text-muted">À payer</div>
-                            <div class="fw-bold"><?= fmt_money($totalAnnuelAPayer) ?> $</div>
+            <!-- TRANCHES -->
+            <div class="card border-0 shadow-sm rounded-4 mb-3">
+                <div class="card-header bg-white border-0 p-3">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div class="small text-muted">
+                            <strong>📊 Montant par tranche</strong> <br>
+                            Scolarité + frais connexes intégrés dans la première tranche
                         </div>
-                    </div>
-                    <div class="col-md-4">
-                        <div class="p-2 border rounded-3 bg-light text-center">
-                            <div class="small text-muted">Payé</div>
-                            <div class="fw-bold text-primary"><?= fmt_money($totalAnnuelPaye) ?> $</div>
-                        </div>
-                    </div>
-                    <div class="col-md-4">
-                        <div class="p-2 border rounded-3 bg-light text-center">
-                            <div class="small text-muted">Reste</div>
-                            <div class="fw-bold text-danger"><?= fmt_money($totalAnnuelReste) ?> $</div>
-                        </div>
+                        <div><a href="finances.php" class="btn btn-primary btn-sm">Voir +</a></div>
                     </div>
                 </div>
 
-                <div class="table-responsive">
-                    <table class="table table-sm align-middle">
-                        <thead class="table-light">
-                            <tr>
-                                <th>Tranche</th>
-                                <th class="text-end">À payer</th>
-                                <th class="text-end">Payé</th>
-                                <th class="text-end">Reste</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <?php foreach ($nums as $num): ?>
-                            <tr>
-                                <td class="fw-semibold">Tranche <?= (int)$num ?></td>
-                                <td class="text-end"><?= fmt_money($apayerByTranche[$num]) ?> $</td>
-                                <td class="text-end text-success"><?= fmt_money($paidByTranche[$num]) ?> $</td>
-                                <td class="text-end text-danger"><?= fmt_money($resteByTranche[$num]) ?> $</td>
-                            </tr>
-                            <?php endforeach; ?>
-                        </tbody>
-                    </table>
+                <div class="card-body">
+                    <?php if (empty($nums)): ?>
+                    <div class="alert alert-info mb-0">Aucune tranche disponible.</div>
+                    <?php else: ?>
+                    <div class="row g-2 mb-3">
+                        <div class="col-md-4">
+                            <div class="p-2 border rounded-3 bg-light text-center">
+                                <div class="small text-muted">À payer</div>
+                                <div class="fw-bold"><?= fmt_money($totalAnnuelAPayer) ?> $</div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="p-2 border rounded-3 bg-light text-center">
+                                <div class="small text-muted">Payé</div>
+                                <div class="fw-bold text-primary"><?= fmt_money($totalAnnuelPaye) ?> $</div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="p-2 border rounded-3 bg-light text-center">
+                                <div class="small text-muted">Reste</div>
+                                <div class="fw-bold text-danger"><?= fmt_money($totalAnnuelReste) ?> $</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="table-responsive">
+                        <table class="table table-sm align-middle">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Tranche</th>
+                                    <th class="text-end">À payer</th>
+                                    <th class="text-end">Payé</th>
+                                    <th class="text-end">Reste</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($nums as $num): ?>
+                                <tr>
+                                    <td class="fw-semibold">Tranche <?= (int)$num ?></td>
+                                    <td class="text-end"><?= fmt_money($apayerByTranche[$num]) ?> $</td>
+                                    <td class="text-end text-success"><?= fmt_money($paidByTranche[$num]) ?> $</td>
+                                    <td class="text-end text-danger"><?= fmt_money($resteByTranche[$num]) ?> $</td>
+                                </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                    <?php endif; ?>
                 </div>
-                <?php endif; ?>
             </div>
+
+            <!-- TABLEAU FUSIONNÉ : DERNIERS PAIEMENTS -->
+            <div class="card border-0 shadow-sm rounded-4 mb-3">
+                <div class="d-flex justify-content-between align-items-center card-header bg-white border-0">
+                    <strong>💳 Derniers paiements</strong>
+                    <a href="finances.php" class="btn btn-primary btn-sm">Voir +</a>
+                </div>
+
+                <div class="card-body p-0 small">
+                    <?php if (empty($allLastPayments)): ?>
+                    <div class="p-3 text-muted">Aucun paiement enregistré.</div>
+                    <?php else: ?>
+                    <div class="table-responsive p-3">
+                        <table class="table table-sm align-middle mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Type de frais</th>
+                                    <th class="text-end">A Payer</th>
+                                    <th class="text-end">Payé</th>
+                                    <th class="text-end">Reste</th>
+                                    <th class="text-end">Obs.</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($allLastPayments as $p): ?>
+                                <tr>
+                                    <td class="text-muted"><?= e($p['dateCreated']) ?></td>
+                                    <td>
+                                        <span
+                                            class="badge <?= $p['type_frais'] === 'Frais scolaire' ? 'bg-primary' : 'bg-info text-dark' ?>">
+                                            <?= e($p['type_frais']) ?>
+                                        </span>
+                                    </td>
+                                    <td class="text-end text-dark fw-semibold"><?= fmt_money($p['montantAPayer']) ?> $
+                                    </td>
+                                    <td class="text-end text-success fw-semibold"><?= fmt_money($p['montantPayer']) ?> $
+                                    </td>
+                                    <td class="text-end text-danger"><?= fmt_money($p['resteAPayer']) ?> $</td>
+                                    <td class="text-end text-muted"><?= e($p['observation']) ?></td>
+                                </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                    <?php endif; ?>
+                </div>
+            </div>
+
         </div>
 
-        <!-- PAIEMENTS RECENTS -->
-        <div class="row g-3">
-            <div class="col-md-12">
+        <!-- COLONNE DROITE -->
+        <div class="col-lg-4">
+
+            <!-- MES ENFANTS -->
+            <div class="card border-0 shadow-sm rounded-4">
+                <div class="card-header bg-white border-0">
+                    <strong>👨‍👩‍👧 Mes enfants</strong>
+                </div>
+                <div class="card-body p-0">
+                    <div class="list-group list-group-flush">
+                        <?php foreach ($children as $c): ?>
+                        <div class="list-group-item d-flex justify-content-between align-items-center">
+                            <div>
+                                <div class="fw-semibold small"><?= e($c['nom'].' '.$c['postnom']) ?></div>
+                                <div class="text-muted small"><?= e($c['classe_desc']) ?> <?= e($c['cycle_desc']) ?>
+                                </div>
+                            </div>
+                            <a class="btn btn-sm btn-primary"
+                                href="<?= BASE_URL ?>/eleve/switch.php?eleve_id=<?= (int)$c['id'] ?>">
+                                Se connecter
+                            </a>
+                        </div>
+                        <?php endforeach; ?>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ANNONCES -->
+            <div class="mt-3">
                 <div class="card border-0 shadow-sm rounded-4 h-100">
                     <div class="d-flex justify-content-between align-items-center card-header bg-white border-0">
-                        <strong>💳 Derniers paiements</strong>
-                        <a href="finances.php" class="btn btn-primary btn-sm">Voir +</a>
+                        <strong>📢 Annonces</strong>
+                        <a href="annonces.php" class="btn btn-secondary btn-sm">Voir +</a>
                     </div>
-
-                    <div class="card-body p-0 small">
-                        <?php if (!$lastPayments): ?>
-                        <div class="p-3 text-muted">Aucun paiement récent.</div>
+                    <div class="card-body small">
+                        <?php if (empty($annonces)): ?>
+                        <div class="text-muted">Aucune annonce disponible.</div>
                         <?php else: ?>
-                        <div class="table-responsive p-3">
-                            <table class="table table-sm align-middle mb-0">
-                                <thead class="table-light">
-                                    <tr>
-                                        <th>Date</th>
-                                        <th>Type</th>
-                                        <th class="text-end">A Payer</th>
-                                        <th class="text-end">Payé</th>
-                                        <th class="text-end">Reste</th>
-                                        <th class="text-end">Obs.</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <?php foreach ($lastPayments as $p): ?>
-                                    <tr>
-                                        <td class="text-muted"><?= e($p['dateCreated']) ?></td>
-                                        <td>
-                                            <span
-                                                class="badge <?= $p['type_frais'] === 'Frais scolaire' ? 'bg-primary' : 'bg-info text-dark' ?>">
-                                                <?= e($p['type_frais']) ?>
-                                            </span>
-                                        </td>
-                                        <td class="text-end text-dark fw-semibold">
-                                            <?= fmt_money($p['montantAPayer']) ?> $</td>
-                                        <td class="text-end text-success fw-semibold">
-                                            <?= fmt_money($p['montantPayer']) ?> $</td>
-                                        <td class="text-end text-danger"><?= fmt_money($p['resteAPayer']) ?> $</td>
-                                        <td class="text-end text-muted"><?= e($p['observation']) ?></td>
-                                    </tr>
-                                    <?php endforeach; ?>
-                                </tbody>
-                            </table>
+                        <?php foreach ($annonces as $a): ?>
+                        <div class="mb-2 pb-2 border-bottom">
+                            <div class="fw-semibold"><?= e($a['titre']) ?></div>
+                            <div class="text-muted small"><?= e($a['created_at']) ?></div>
                         </div>
+                        <?php endforeach; ?>
                         <?php endif; ?>
                     </div>
                 </div>
             </div>
-        </div>
 
+        </div>
     </div>
-
-    <!-- COLONNE DROITE -->
-    <div class="col-lg-4">
-
-        <!-- MES ENFANTS -->
-        <div class="card border-0 shadow-sm rounded-4">
-            <div class="card-header bg-white border-0">
-                <strong>👨‍👩‍👧 Mes enfants</strong>
-            </div>
-            <div class="card-body p-0">
-                <div class="list-group list-group-flush">
-                    <?php foreach ($children as $c): ?>
-                    <div class="list-group-item d-flex justify-content-between align-items-center">
-                        <div>
-                            <div class="fw-semibold small"><?= e($c['nom'].' '.$c['postnom']) ?></div>
-                            <div class="text-muted small"><?= e($c['classe_desc']) ?> <?= e($c['cycle_desc']) ?>
-                            </div>
-                        </div>
-                        <a class="btn btn-sm btn-primary"
-                            href="<?= BASE_URL ?>/eleve/switch.php?eleve_id=<?= (int)$c['id'] ?>">
-                            Se connecter
-                        </a>
-                    </div>
-                    <?php endforeach; ?>
-                </div>
-            </div>
-        </div>
-
-        <!-- ANNONCES -->
-        <div class="mt-3">
-            <div class="card border-0 shadow-sm rounded-4 h-100">
-                <div class="d-flex justify-content-between align-items-center card-header bg-white border-0">
-                    <strong>📢 Annonces</strong>
-                    <a href="annonces.php" class="btn btn-secondary btn-sm">Voir +</a>
-                </div>
-                <div class="card-body small">
-                    <?php if (empty($annonces)): ?>
-                    <div class="text-muted">Aucune annonce disponible.</div>
-                    <?php else: ?>
-                    <?php foreach ($annonces as $a): ?>
-                    <div class="mb-2 pb-2 border-bottom">
-                        <div class="fw-semibold"><?= e($a['titre']) ?></div>
-                        <div class="text-muted small"><?= e($a['created_at']) ?></div>
-                    </div>
-                    <?php endforeach; ?>
-                    <?php endif; ?>
-                </div>
-            </div>
-        </div>
-
-    </div>
-</div>
 </div>
 
 <?php require_once __DIR__ . '/layout/footer.php'; ?>
