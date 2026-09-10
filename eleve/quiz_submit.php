@@ -235,7 +235,24 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && !$error) {
                     if ($_FILES['files']['error'][$key] === UPLOAD_ERR_OK) {
                         $tmpName = $_FILES['files']['tmp_name'][$key];
                         $fileSize = (int)$_FILES['files']['size'][$key];
-                        $mimeType = mime_content_type($tmpName) ?: $_FILES['files']['type'][$key];
+                        
+                        // Détection sécurisée du type MIME sans lever d'erreur si extension non activée
+                        if (function_exists('mime_content_type')) {
+                            $mimeType = mime_content_type($tmpName) ?: $_FILES['files']['type'][$key];
+                        } else {
+                            $ext = strtolower(pathinfo($origName, PATHINFO_EXTENSION));
+                            $mimeTypes = [
+                                'jpg'  => 'image/jpeg',
+                                'jpeg' => 'image/jpeg',
+                                'png'  => 'image/png',
+                                'gif'  => 'image/gif',
+                                'pdf'  => 'application/pdf',
+                                'mp4'  => 'video/mp4',
+                                'doc'  => 'application/msword',
+                                'docx' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                            ];
+                            $mimeType = $mimeTypes[$ext] ?? ($_FILES['files']['type'][$key] ?? 'application/octet-stream');
+                        }
                         
                         // Générer un nom unique de fichier sur le disque
                         $ext = pathinfo($origName, PATHINFO_EXTENSION);
