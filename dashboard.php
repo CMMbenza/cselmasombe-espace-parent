@@ -340,7 +340,7 @@ try {
 
         <div class="col-lg-8">
             <!-- TRANCHES -->
-            <div class="card border-0 shadow-sm rounded-4 mb-3">
+            <div class="d-none card border-0 shadow-sm rounded-4 mb-3">
                 <div class="card-header bg-white border-0 p-3">
                     <div class="d-flex justify-content-between align-items-center">
                         <div class="small text-muted">

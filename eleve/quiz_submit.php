@@ -112,12 +112,24 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && !$error) {
         $error = "Votre soumission a déjà été corrigée. Vous ne pouvez plus la modifier.";
     } else {
         try {
+            // Validation spécifique au format PJ si aucun fichier n'a été fourni et qu'il n'y a pas encore de pièce jointe
+            if ($quiz['format'] === 'PJ' && empty($_FILES['files']['name'][0])) {
+                throw new Exception("Veuillez joindre au moins un fichier avant d'envoyer votre travail.");
+            }
+
             $pdo->beginTransaction();
+
+            $anneeScolaire = $quiz['anneeScolaire'] ?? null;
 
             // Créer ou mettre à jour la soumission
             if (!$submissionId) {
-                $ins = $pdo->prepare("INSERT INTO quiz_submission (quiz_id, eleve_id, periode_id, statut) VALUES (:qid,:eid,:pid,'remis')");
-                $ins->execute([':qid'=>$qid, ':eid'=>$eid, ':pid'=>$periodeId]);
+                $ins = $pdo->prepare("INSERT INTO quiz_submission (quiz_id, eleve_id, periode_id, statut, anneeScolaire) VALUES (:qid,:eid,:pid,'remis',:as)");
+                $ins->execute([
+                    ':qid' => $qid,
+                    ':eid' => $eid,
+                    ':pid' => $periodeId,
+                    ':as'  => $anneeScolaire
+                ]);
                 $submissionId = (int)$pdo->lastInsertId();
             } else {
                 $pdo->prepare("UPDATE quiz_submission SET statut='remis', periode_id=:pid WHERE id=:sid")
@@ -125,26 +137,23 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && !$error) {
                 $pdo->prepare("DELETE FROM quiz_answer WHERE submission_id=:sid")->execute([':sid'=>$submissionId]);
             }
             
+            // --- TRAITEMENT DES QUESTIONS (QCM / RQ) ---
             foreach($questions as $q) {
                 $qidQ = (int)$q['id'];
                 $keywords = $keywordsByQ[$qidQ] ?? [];
 
                 if ($q['TYPE'] === 'QCM') {
-
                     $selectedChoices = $_POST['qcm_'.$qidQ] ?? [];
 
                     if (!empty($selectedChoices) && is_array($selectedChoices)) {
-
                         $selectedChoices = array_map('intval', $selectedChoices);
 
-                        // 🔹 récupérer TOUTES les réponses
                         $stmt = $pdo->prepare("SELECT id, is_correct FROM quiz_choice WHERE question_id=:qid");
                         $stmt->execute([':qid'=>$qidQ]);
                         $allChoices = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
                         $allIds = array_column($allChoices, 'id');
 
-                        // 🔹 récupérer bonnes réponses
                         $correctIds = [];
                         foreach ($allChoices as $c) {
                             if ($c['is_correct'] == 1) {
@@ -154,46 +163,34 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && !$error) {
 
                         $totalCorrect = count($correctIds);
                         $totalChoices = count($allIds);
-
                         $points = 0;
 
-                        // 🚨 CAS TRICHE
                         if (
-                            count($selectedChoices) > $totalCorrect // coche trop
-                            || count($selectedChoices) == $totalChoices // coche tout
+                            count($selectedChoices) > $totalCorrect
+                            || count($selectedChoices) == $totalChoices
                         ) {
                             $points = 0;
-
-                            // (optionnel) message debug/log
-                            // echo "Triche détectée";
-                        }
-
-                        // ✅ CAS NORMAL (points partiels)
-                        else {
-
+                        } else {
                             if ($totalCorrect > 0) {
-
                                 $pointsParBonne = (float)$q['points'] / $totalCorrect;
-
                                 foreach ($selectedChoices as $id) {
                                     if (in_array($id, $correctIds)) {
                                         $points += $pointsParBonne;
                                     }
                                 }
-
                                 $points = round($points, 2);
                             }
                         }
 
-                        // 💾 sauvegarde
                         $pdo->prepare("
-                            INSERT INTO quiz_answer (submission_id, question_id, choice_id, points_obtenus)
-                            VALUES (:sid,:qid,:cid,:pts)
+                            INSERT INTO quiz_answer (submission_id, question_id, choice_id, points_obtenus, anneeScolaire)
+                            VALUES (:sid,:qid,:cid,:pts,:as)
                         ")->execute([
-                            ':sid'=>$submissionId,
-                            ':qid'=>$qidQ,
-                            ':cid'=>implode(',', $selectedChoices),
-                            ':pts'=>$points
+                            ':sid' => $submissionId,
+                            ':qid' => $qidQ,
+                            ':cid' => implode(',', $selectedChoices),
+                            ':pts' => $points,
+                            ':as'  => $anneeScolaire
                         ]);
 
                         $totalScore += $points;
@@ -202,26 +199,79 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && !$error) {
                     $txt = trim((string)($_POST['rq_'.$qidQ] ?? ''));
                     $score = 0.0;
                     if ($txt!=='') {
-                        // Calcul automatique par mots-clés
                         $matches = 0;
                         foreach($keywords as $kw){
                             if (stripos($txt, $kw)!==false) $matches++;
                         }
                         $score = count($keywords)>0 ? round(($matches/count($keywords))* (float)$q['points'],2) : 0.0;
 
-                        $pdo->prepare("INSERT INTO quiz_answer (submission_id, question_id, reponse_text, points_obtenus) VALUES (:sid,:qid,:txt,:pts)")
-                            ->execute([':sid'=>$submissionId, ':qid'=>$qidQ, ':txt'=>$txt, ':pts'=>$score]);
+                        $pdo->prepare("INSERT INTO quiz_answer (submission_id, question_id, reponse_text, points_obtenus, anneeScolaire) VALUES (:sid,:qid,:txt,:pts,:as)")
+                            ->execute([
+                                ':sid' => $submissionId,
+                                ':qid' => $qidQ,
+                                ':txt' => $txt,
+                                ':pts' => $score,
+                                ':as'  => $anneeScolaire
+                            ]);
                         $totalScore += $score;
                     }
                 }
             }
 
-            $pdo->prepare("UPDATE quiz_submission SET note_totale=:nt, statut='corrige' WHERE id=:sid")
-                ->execute([':nt'=>$totalScore, ':sid'=>$submissionId]);
+            // --- TRAITEMENT ET SAUVEGARDE DES PIÈCES JOINTES ÉLÈVE (quiz_submission_attachment) ---
+            if (isset($_FILES['files']) && !empty($_FILES['files']['name'][0])) {
+                // Définition et création du dossier de destination
+                $uploadDir = __DIR__ . '/../../uploads/quiz_submissions/';
+                if (!is_dir($uploadDir)) {
+                    mkdir($uploadDir, 0777, true);
+                }
+
+                $stmtAtt = $pdo->prepare("
+                    INSERT INTO quiz_submission_attachment (submission_id, file_path, original_name, mime_type, file_size)
+                    VALUES (:sid, :path, :oname, :mime, :fsize)
+                ");
+
+                foreach ($_FILES['files']['name'] as $key => $origName) {
+                    if ($_FILES['files']['error'][$key] === UPLOAD_ERR_OK) {
+                        $tmpName = $_FILES['files']['tmp_name'][$key];
+                        $fileSize = (int)$_FILES['files']['size'][$key];
+                        $mimeType = mime_content_type($tmpName) ?: $_FILES['files']['type'][$key];
+                        
+                        // Générer un nom unique de fichier sur le disque
+                        $ext = pathinfo($origName, PATHINFO_EXTENSION);
+                        $filename = 'sub_' . $submissionId . '_' . uniqid() . ($ext ? '.' . $ext : '');
+                        $targetPath = $uploadDir . $filename;
+                        
+                        // Chemin relatif pour la base de données
+                        $dbPath = '/../../uploads/quiz_submissions/' . $filename;
+
+                        if (move_uploaded_file($tmpName, $targetPath)) {
+                            $stmtAtt->execute([
+                                ':sid'   => $submissionId,
+                                ':path'  => $dbPath,
+                                ':oname' => $origName,
+                                ':mime'  => $mimeType,
+                                ':fsize' => $fileSize
+                            ]);
+                        }
+                    }
+                }
+            }
+
+            // Déterminer le statut et la note globale de la soumission
+            if ($quiz['format'] === 'PJ') {
+                // Pour un format PJ (correction manuelle ultérieure du professeur), la note n'est pas automatique
+                $pdo->prepare("UPDATE quiz_submission SET statut='remis' WHERE id=:sid")
+                    ->execute([':sid'=>$submissionId]);
+                $ok = "Votre devoir avec pièce jointe a bien été envoyé !";
+            } else {
+                $pdo->prepare("UPDATE quiz_submission SET note_totale=:nt, statut='corrige' WHERE id=:sid")
+                    ->execute([':nt'=>$totalScore, ':sid'=>$submissionId]);
+                $ok = "Le travail a été réalisé avec succès.. Note obtenue : $totalScore / ".array_sum(array_map(fn($q)=> (float)$q['points'],$questions));
+                $locked = true;
+            }
 
             $pdo->commit();
-            $ok = "Le travail a été réalisé avec succès.. Note obtenue : $totalScore / ".array_sum(array_map(fn($q)=> (float)$q['points'],$questions));
-            $locked = true; // bloquer le formulaire après soumission
         } catch(Throwable $e){
             $pdo->rollBack();
             $error = "Échec de la soumission : ".$e->getMessage();
@@ -240,7 +290,6 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && !$error) {
 </style>
 
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 
 <div class="container my-4">
@@ -258,37 +307,30 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && !$error) {
             <h5 class="mb-3">📎 Fichiers joints par le professeur</h5>
 
             <?php foreach ($attachments as $file): 
-            $path = e($file['file_path']);
-            $type = $file['mime_type'];
-        ?>
+                $path = e($file['file_path']);
+                $type = $file['mime_type'];
+            ?>
 
             <div class="mb-4">
-
                 <p class="fw-bold mb-2">
                     <?= e($file['original_name']) ?>
                 </p>
 
                 <?php if (str_starts_with($type, 'image/')): ?>
-
                 <!-- PREVIEW IMAGE -->
                 <img src="<?= $path ?>" class="img-fluid rounded shadow-sm"
                     style="max-height:400px; object-fit:contain;">
 
                 <?php elseif ($type === 'application/pdf'): ?>
-
                 <!-- PREVIEW PDF -->
-                <iframe src="<?= $path ?>" width="100%" height="500px" style="border-radius:8px;">
-                </iframe>
+                <iframe src="<?= $path ?>" width="100%" height="500px" style="border-radius:8px;"></iframe>
 
                 <?php else: ?>
-
                 <!-- AUTRES FICHIERS -->
                 <a href="<?= $path ?>" class="btn btn-primary" target="_blank">
                     📥 Télécharger
                 </a>
-
                 <?php endif; ?>
-
             </div>
 
             <?php endforeach; ?>
@@ -297,20 +339,22 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && !$error) {
     </div>
     <?php endif; ?>
 
-
     <?php if($error): ?>
     <div class="alert alert-danger"><?= e($error) ?></div>
     <?php endif; ?>
     <?php if($ok): ?>
     <div class="alert alert-success"><?= e($ok) ?></div>
+    <?php if ($submissionId): ?>
     <a href="<?= BASE_URL ?>/eleve/submission_view.php?id=<?= $submissionId ?>" class="btn btn-primary mb-3">Voir la
         correction</a>
-    <a href="<?= BASE_URL ?>/eleve/quizzes.php" class="btn btn-dark mb-3">Voir d'autre quiz</a>
+    <?php endif; ?>
+    <a href="<?= BASE_URL ?>/eleve/quizzes.php" class="btn btn-dark mb-3">Voir d'autres quiz</a>
     <?php endif; ?>
 
     <form method="post" enctype="multipart/form-data" class="card shadow-sm">
         <div class="card-body">
 
+            <?php if (!empty($questions)): ?>
             <ol>
                 <?php foreach($questions as $q): ?>
                 <li class="mb-3">
@@ -343,21 +387,21 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && !$error) {
                         if (isset($answers[$q['id']]['choice_id'])) {
                             $savedChoices = explode(',', $answers[$q['id']]['choice_id']);
                         }
-                        ?>
+                    ?>
                     <div class="form-check">
                         <input type="checkbox" name="qcm_<?= $q['id'] ?>[]" value="<?= $c['id'] ?>"
                             class="form-check-input" <?= $locked?'disabled':'' ?>
-                            <?= in_array($c['id'], $savedChoices) ? 'checked' : '' ?> <label
-                            class="form-check-label"><?= e($c['choice_text']) ?></label>
+                            <?= in_array($c['id'], $savedChoices) ? 'checked' : '' ?>>
+                        <label class="form-check-label"><?= e($c['choice_text']) ?></label>
                     </div>
                     <?php endforeach; ?>
                     <?php else: // RQ ?>
                     <?php  
                         $savedTextRaw = $answers[$q['id']]['reponse_text'] ?? ''; 
-                        $savedText = trim($savedTextRaw); // supprime espaces au début/fin
+                        $savedText = trim($savedTextRaw);
                         $keywords = $keywordsByQ[$q['id']] ?? [];
                         $keywordsJson = json_encode($keywords);
-                        ?>
+                    ?>
                     <div class="rq-editor-wrapper" style="position:relative;">
                         <div class="highlighted-content"></div>
                         <div contenteditable="<?= $locked ? 'false' : 'true' ?>" class="form-control rq-input"
@@ -371,12 +415,13 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && !$error) {
                 </li>
                 <?php endforeach; ?>
             </ol>
+            <?php endif; ?>
 
             <?php if($quiz['format']==='PJ'): ?>
             <div class="mb-3">
-                <label class="form-label">Joindre un fichier (obligatoire)</label>
-                <input type="file" name="files[]" class="form-control" multiple accept=".pdf,image/jpeg,image/jpg"
-                    <?= $locked?'disabled':'' ?>>
+                <label class="form-label font-weight-bold">Joindre un fichier (obligatoire pour ce format)</label>
+                <input type="file" name="files[]" class="form-control" multiple
+                    accept=".pdf,.mp4,image/jpeg,image/jpg,image/png" <?= $locked?'disabled':'' ?> required>
             </div>
             <?php endif; ?>
 
@@ -418,22 +463,26 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && !$error) {
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    const modal = new bootstrap.Modal(document.getElementById('warningModal'));
-    modal.show();
+    const modalElement = document.getElementById('warningModal');
+    if (modalElement) {
+        const modal = new bootstrap.Modal(modalElement);
+        modal.show();
+    }
 
     const editors = document.querySelectorAll('.rq-editor-wrapper');
     editors.forEach(wrapper => {
         const inputDiv = wrapper.querySelector('.rq-input');
         const hiddenInput = wrapper.querySelector('.rq-hidden');
-        const keywords = JSON.parse(inputDiv.dataset.keywords);
+        if (!inputDiv || !hiddenInput) return;
+
+        const keywords = JSON.parse(inputDiv.dataset.keywords || '[]');
 
         function highlightKeywords() {
             let text = inputDiv.textContent || '';
-            hiddenInput.value = text; // conserver la valeur pour POST
+            hiddenInput.value = text;
 
             let html = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
-            // Surbrillance mots-clés
             keywords.forEach(kw => {
                 const re = new RegExp(`(${kw.replace(/[-/\\^$*+?.()|[\]{}]/g,'\\$&')})`, 'gi');
                 html = html.replace(re, '<mark>$1</mark>');
@@ -441,7 +490,6 @@ document.addEventListener('DOMContentLoaded', function() {
 
             inputDiv.innerHTML = html;
 
-            // Placer le curseur à la fin après mise à jour
             const range = document.createRange();
             const sel = window.getSelection();
             range.selectNodeContents(inputDiv);
