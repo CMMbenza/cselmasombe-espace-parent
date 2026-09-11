@@ -17,9 +17,10 @@ if ($eid <= 0) {
 
 // 1) Vérification que l'élève appartient au ménage
 $stmt = $pdo->prepare("
-    SELECT e.id, e.nom, e.prenom, e.classe, c.description AS classe_desc
+    SELECT e.id, e.nom, e.prenom, e.classe, CONCAT(c.description ,' ', cy.description) AS classe_desc
     FROM eleve e
     JOIN classe c ON c.id = e.classe
+    JOIN cycle cy ON cy.id = c.cycle
     WHERE e.id = :eid AND e.menage = :mid
     LIMIT 1
 ");
@@ -120,6 +121,7 @@ foreach ($rawHoraire as $item) {
                 class="btn btn-sm <?= $filterType === 'Examen' ? 'btn-danger active' : 'btn-outline-danger' ?>">
                 <i class="bi bi-file-earmark-spreadsheet me-1"></i>Examens
             </a>
+            <a class="btn btn-dark btn-sm" href="quizzes.php">&larr; Retour</a>
         </div>
     </div>
 

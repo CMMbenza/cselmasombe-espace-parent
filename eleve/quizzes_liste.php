@@ -149,14 +149,12 @@ foreach ($allQuizzes as $qz) {
         <div>
             <h1 class="h3 mb-1"><i class="bi bi-archive me-2"></i>Archives des Devoirs & Quiz</h1>
             <p class="text-muted mb-0">
-                Élève : <strong><?= htmlspecialchars($el['prenom'] . ' ' . $el['nom'], ENT_QUOTES, 'UTF-8') ?></strong> 
+                Élève : <strong><?= htmlspecialchars($el['prenom'] . ' ' . $el['nom'], ENT_QUOTES, 'UTF-8') ?></strong>
                 (<?= htmlspecialchars($el['classe_desc'], ENT_QUOTES, 'UTF-8') ?>)
             </p>
         </div>
         <div class="mt-3 mt-md-0">
-            <a href="<?= BASE_URL ?>/eleve/quizzes.php" class="btn btn-outline-primary btn-sm">
-                <i class="bi bi-arrow-left me-1"></i> Tableau de bord des quiz
-            </a>
+            <a class="btn btn-dark btn-sm" href="quizzes.php">&larr; Retour</a>
         </div>
     </div>
 
@@ -167,16 +165,19 @@ foreach ($allQuizzes as $qz) {
                 <div class="col-md-5">
                     <div class="input-group">
                         <span class="input-group-text"><i class="bi bi-search"></i></span>
-                        <input type="text" name="q" class="form-control" placeholder="Rechercher par titre de quiz..." value="<?= htmlspecialchars($searchQuery, ENT_QUOTES, 'UTF-8') ?>">
+                        <input type="text" name="q" class="form-control" placeholder="Rechercher par titre de quiz..."
+                            value="<?= htmlspecialchars($searchQuery, ENT_QUOTES, 'UTF-8') ?>">
                     </div>
                 </div>
                 <div class="col-md-4">
                     <select name="annee" class="form-select">
                         <option value="">Toutes les années scolaires</option>
                         <?php foreach ($listeAnnees as $an): ?>
-                            <option value="<?= htmlspecialchars($an, ENT_QUOTES, 'UTF-8') ?>" <?= $selectedAnnee === $an ? 'selected' : '' ?>>
-                                Année <?= htmlspecialchars($an, ENT_QUOTES, 'UTF-8') ?> <?= $an === $anneeActuelle ? '(En cours)' : '' ?>
-                            </option>
+                        <option value="<?= htmlspecialchars($an, ENT_QUOTES, 'UTF-8') ?>"
+                            <?= $selectedAnnee === $an ? 'selected' : '' ?>>
+                            Année <?= htmlspecialchars($an, ENT_QUOTES, 'UTF-8') ?>
+                            <?= $an === $anneeActuelle ? '(En cours)' : '' ?>
+                        </option>
                         <?php endforeach; ?>
                     </select>
                 </div>
@@ -185,9 +186,9 @@ foreach ($allQuizzes as $qz) {
                         <i class="bi bi-funnel me-1"></i> Filtrer
                     </button>
                     <?php if ($searchQuery !== '' || $selectedAnnee !== ''): ?>
-                        <a href="<?= BASE_URL ?>/eleve/quizzes_liste.php" class="btn btn-outline-secondary">
-                            <i class="bi bi-x-circle"></i>
-                        </a>
+                    <a href="<?= BASE_URL ?>/eleve/quizzes_liste.php" class="btn btn-outline-secondary">
+                        <i class="bi bi-x-circle"></i>
+                    </a>
                     <?php endif; ?>
                 </div>
             </form>
@@ -196,91 +197,96 @@ foreach ($allQuizzes as $qz) {
 
     <!-- Liste d'archives groupée par Année -->
     <?php if (empty($archives)): ?>
-        <div class="alert alert-info text-center py-4 shadow-sm" role="alert">
-            <i class="bi bi-info-circle fs-3 d-block mb-2"></i>
-            Aucun quiz n'a été trouvé pour les critères sélectionnés.
-        </div>
+    <div class="alert alert-info text-center py-4 shadow-sm" role="alert">
+        <i class="bi bi-info-circle fs-3 d-block mb-2"></i>
+        Aucun quiz n'a été trouvé pour les critères sélectionnés.
+    </div>
     <?php else: ?>
-        <?php foreach ($archives as $anneeGroup => $items): ?>
-            <div class="mb-5">
-                <div class="d-flex align-items-center mb-3">
-                    <span class="badge bg-dark fs-6 me-2">
-                        <i class="bi bi-calendar-range me-1"></i> Année <?= htmlspecialchars($anneeGroup, ENT_QUOTES, 'UTF-8') ?>
-                    </span>
-                    <?php if ($anneeGroup === $anneeActuelle): ?>
-                        <span class="badge bg-success">Année en cours</span>
-                    <?php endif; ?>
-                    <div class="flex-grow-1 ms-3 border-bottom"></div>
-                </div>
+    <?php foreach ($archives as $anneeGroup => $items): ?>
+    <div class="mb-5">
+        <div class="d-flex align-items-center mb-3">
+            <span class="badge bg-dark fs-6 me-2">
+                <i class="bi bi-calendar-range me-1"></i> Année
+                <?= htmlspecialchars($anneeGroup, ENT_QUOTES, 'UTF-8') ?>
+            </span>
+            <?php if ($anneeGroup === $anneeActuelle): ?>
+            <span class="badge bg-success">Année en cours</span>
+            <?php endif; ?>
+            <div class="flex-grow-1 ms-3 border-bottom"></div>
+        </div>
 
-                <div class="row g-3">
-                    <?php foreach ($items as $entry): 
+        <div class="row g-3">
+            <?php foreach ($items as $entry): 
                         $qz        = $entry['quiz'];
                         $sub       = $entry['sub'];
                         $isExpired = $entry['isExpired'];
                         $teacher   = trim(($qz['agent_prenom'] ?? '') . ' ' . ($qz['agent_nom'] ?? ''));
                     ?>
-                        <div class="col-md-6 col-lg-4">
-                            <div class="card h-100 shadow-sm border-0 position-relative" style="background-color: #fdfdfd;">
-                                <div class="card-body d-flex flex-column">
-                                    <div class="d-flex justify-content-between align-items-start mb-2">
-                                        <span class="badge text-bg-light border">
-                                            <?= htmlspecialchars(strtoupper($qz['type_quiz'] ?? 'QUIZ'), ENT_QUOTES, 'UTF-8') ?>
-                                        </span>
-                                        <?php if ($sub): ?>
-                                            <?php if ($sub['statut'] === 'corrige'): ?>
-                                                <span class="badge bg-success">
-                                                    <i class="bi bi-check-circle me-1"></i> Noté : <?= htmlspecialchars((string)$sub['note_totale'], ENT_QUOTES, 'UTF-8') ?> pts
-                                                </span>
-                                            <?php else: ?>
-                                                <span class="badge bg-warning text-dark">
-                                                    <i class="bi bi-clock-history me-1"></i> Remis
-                                                </span>
-                                            <?php endif; ?>
-                                        <?php elseif ($isExpired): ?>
-                                            <span class="badge bg-danger">
-                                                <i class="bi bi-x-circle me-1"></i> Expiré
-                                            </span>
-                                        <?php else: ?>
-                                            <span class="badge bg-primary">
-                                                <i class="bi bi-exclamation-circle me-1"></i> À faire
-                                            </span>
-                                        <?php endif; ?>
-                                    </div>
+            <div class="col-md-6 col-lg-4">
+                <div class="card h-100 shadow-sm border-0 position-relative" style="background-color: #fdfdfd;">
+                    <div class="card-body d-flex flex-column">
+                        <div class="d-flex justify-content-between align-items-start mb-2">
+                            <span class="badge text-bg-light border">
+                                <?= htmlspecialchars(strtoupper($qz['type_quiz'] ?? 'QUIZ'), ENT_QUOTES, 'UTF-8') ?>
+                            </span>
+                            <?php if ($sub): ?>
+                            <?php if ($sub['statut'] === 'corrige'): ?>
+                            <span class="badge bg-success">
+                                <i class="bi bi-check-circle me-1"></i> Noté :
+                                <?= htmlspecialchars((string)$sub['note_totale'], ENT_QUOTES, 'UTF-8') ?> pts
+                            </span>
+                            <?php else: ?>
+                            <span class="badge bg-warning text-dark">
+                                <i class="bi bi-clock-history me-1"></i> Remis
+                            </span>
+                            <?php endif; ?>
+                            <?php elseif ($isExpired): ?>
+                            <span class="badge bg-danger">
+                                <i class="bi bi-x-circle me-1"></i> Expiré
+                            </span>
+                            <?php else: ?>
+                            <span class="badge bg-primary">
+                                <i class="bi bi-exclamation-circle me-1"></i> À faire
+                            </span>
+                            <?php endif; ?>
+                        </div>
 
-                                    <h5 class="card-title h6 text-primary mb-2">
-                                        <?= htmlspecialchars($qz['titre'], ENT_QUOTES, 'UTF-8') ?>
-                                    </h5>
+                        <h5 class="card-title h6 text-primary mb-2">
+                            <?= htmlspecialchars($qz['titre'], ENT_QUOTES, 'UTF-8') ?>
+                        </h5>
 
-                                    <div class="small text-muted mb-3 flex-grow-1">
-                                        <?php if (!empty($qz['periode_libelle'])): ?>
-                                            <div><i class="bi bi-bookmark me-1"></i> Période : <?= htmlspecialchars($qz['periode_libelle'], ENT_QUOTES, 'UTF-8') ?></div>
-                                        <?php endif; ?>
-                                        <?php if ($teacher !== ''): ?>
-                                            <div><i class="bi bi-person me-1"></i> Enseignant : <?= htmlspecialchars($teacher, ENT_QUOTES, 'UTF-8') ?></div>
-                                        <?php endif; ?>
-                                        <div>
-                                            <i class="bi bi-calendar-event me-1"></i> Limite : 
-                                            <?= !empty($qz['date_limite']) ? date('d/m/Y', strtotime($qz['date_limite'])) : 'Aucune' ?>
-                                        </div>
-                                    </div>
-
-                                    <!-- Action : Bouton de consultation -->
-                                    <div class="pt-2 border-top d-flex justify-content-between align-items-center">
-                                        <span class="small text-muted">
-                                            <?= date('d/m/Y', strtotime($qz['created_at'])) ?>
-                                        </span>
-                                        <a href="<?= BASE_URL ?>/eleve/quiz_detail.php?id=<?= (int)$qz['id'] ?>" class="btn btn-outline-primary btn-sm">
-                                            <i class="bi bi-eye me-1"></i> Voir questions
-                                        </a>
-                                    </div>
-                                </div>
+                        <div class="small text-muted mb-3 flex-grow-1">
+                            <?php if (!empty($qz['periode_libelle'])): ?>
+                            <div><i class="bi bi-bookmark me-1"></i> Période :
+                                <?= htmlspecialchars($qz['periode_libelle'], ENT_QUOTES, 'UTF-8') ?></div>
+                            <?php endif; ?>
+                            <?php if ($teacher !== ''): ?>
+                            <div><i class="bi bi-person me-1"></i> Enseignant :
+                                <?= htmlspecialchars($teacher, ENT_QUOTES, 'UTF-8') ?></div>
+                            <?php endif; ?>
+                            <div>
+                                <i class="bi bi-calendar-event me-1"></i> Limite :
+                                <?= !empty($qz['date_limite']) ? date('d/m/Y', strtotime($qz['date_limite'])) : 'Aucune' ?>
                             </div>
                         </div>
-                    <?php endforeach; ?>
+
+                        <!-- Action : Bouton de consultation -->
+                        <div class="pt-2 border-top d-flex justify-content-between align-items-center">
+                            <span class="small text-muted">
+                                <?= date('d/m/Y', strtotime($qz['created_at'])) ?>
+                            </span>
+                            <a href="<?= BASE_URL ?>/eleve/quiz_detail.php?id=<?= (int)$qz['id'] ?>"
+                                class="btn btn-outline-primary btn-sm">
+                                <i class="bi bi-eye me-1"></i> Voir questions
+                            </a>
+                        </div>
+                    </div>
                 </div>
             </div>
-        <?php endforeach; ?>
+            <?php endforeach; ?>
+        </div>
+    </div>
+    <?php endforeach; ?>
     <?php endif; ?>
 </div>
 

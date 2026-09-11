@@ -17,9 +17,10 @@ if ($eid <= 0) {
 
 // 1) Vérification que l'élève appartient au ménage
 $stmt = $pdo->prepare("
-    SELECT e.id, e.nom, e.prenom, e.classe, c.description AS classe_desc
+    SELECT e.id, e.nom, e.prenom, e.classe, CONCAT(c.description ,' ', cy.description) AS classe_desc
     FROM eleve e
     JOIN classe c ON c.id = e.classe
+    JOIN cycle cy ON cy.id = c.cycle
     WHERE e.id = :eid AND e.menage = :mid
     LIMIT 1
 ");
@@ -76,7 +77,7 @@ $historique = $stHist->fetchAll(PDO::FETCH_ASSOC);
                 Élève : <strong><?= htmlspecialchars($eleve['prenom'] . ' ' . $eleve['nom'], ENT_QUOTES, 'UTF-8') ?></strong> 
                 | Classe : <span class="badge text-bg-info"><?= htmlspecialchars($eleve['classe_desc'], ENT_QUOTES, 'UTF-8') ?></span>
             </p>
-        </div>
+        </div><a class="btn btn-dark btn-sm" href="quizzes.php">&larr; Retour</a>
     </div>
 
     <!-- Cartes Résumé / Statistiques -->
