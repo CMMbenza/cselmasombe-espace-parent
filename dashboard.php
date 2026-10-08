@@ -54,6 +54,7 @@ try {
 // --- Enfants du ménage (avec classe + cycle) ---
 $children   = [];
 $nbChildren = 0;
+$enfantIds  = [];
 try {
     $st = $pdo->prepare("
         SELECT e.id, e.nom, e.postnom, e.prenom, e.classe,
@@ -69,9 +70,13 @@ try {
     $st->execute([':mid'=>$menageId]);
     $children   = $st->fetchAll(PDO::FETCH_ASSOC);
     $nbChildren = count($children);
+    foreach ($children as $k) {
+        $enfantIds[] = (int)$k['id'];
+    }
 } catch (Throwable $e) {
     $children   = [];
     $nbChildren = 0;
+    $enfantIds  = [];
 }
 
 // --- Situation FRAIS SCOLAIRES (paiements strictes) ---
@@ -241,19 +246,35 @@ usort($combinedPayments, function($a, $b) {
 
 $allLastPayments = array_slice($combinedPayments, 0, 5);
 
-
 /* ============================================================
-   3. ANNONCES (3 dernières annonces)
+   3. ANNONCES (3 plus récentes datant de moins de 5 jours)
    ============================================================ */
 $annonces = [];
 try {
-    $st = $pdo->query("
-        SELECT a.id, a.titre, a.contenu, a.visible_a, a.created_at
+    $where = [];
+    $params = [];
+
+    $where[] = "a.dest_type = 'tous'";
+    $where[] = "a.dest_type = 'eleves'";
+
+    if (!empty($enfantIds)) {
+        $in = implode(',', array_fill(0, count($enfantIds), '?'));
+        $where[] = "(a.dest_type = 'user' AND a.dest_id IN ($in))";
+        $params = array_merge($params, $enfantIds);
+    }
+
+    // Ajout de la condition : créées depuis moins de 5 jours
+    $sql = "
+        SELECT a.id, a.titre, a.contenu, a.created_at
         FROM annonces a
-        WHERE a.visible_a IN ('parents','tous')
+        WHERE (" . implode(' OR ', $where) . ")
+          AND a.created_at >= NOW() - INTERVAL 5 DAY
         ORDER BY a.created_at DESC
         LIMIT 3
-    ");
+    ";
+
+    $st = $pdo->prepare($sql);
+    $st->execute($params);
     $annonces = $st->fetchAll(PDO::FETCH_ASSOC);
 } catch (Throwable $e) {
     $annonces = [];
