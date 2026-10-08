@@ -7,7 +7,7 @@ require_parent();
 require_once __DIR__ . '/../layout/header.php';
 require_once __DIR__ . '/../layout/navbar.php';
 
-$mid = (int)($_SESSION['parent']['id'] ?? 0);
+$mid = (int)($_SESSION['parent']['id'] ?? ($_SESSION['menage_id'] ?? 0));
 $eid = (int)get_current_eleve_id();
 
 if ($eid <= 0) {
@@ -35,6 +35,38 @@ if (!$eleve) {
 
 $classeId = (int)$eleve['classe'];
 
+// -------------------------------------------------------------------------
+// RÉCUPÉRATION DE LA DATE DE DÉBUT DU BLOCAGE (SI ACTIF)
+// -------------------------------------------------------------------------
+$dateBlocageJournal = null;
+$dateBlocageResume  = null;
+
+try {
+    $stB = $pdo->prepare("
+        SELECT type_acces, date_debut 
+        FROM blocage_acces 
+        WHERE menage_id = :mid 
+          AND statut = 'actif' 
+          AND date_debut <= CURDATE()
+    ");
+    $stB->execute([':mid' => $mid]);
+    $blocages = $stB->fetchAll(PDO::FETCH_ASSOC);
+
+    foreach ($blocages as $b) {
+        $t = $b['type_acces'];
+        $d = $b['date_debut'];
+
+        if ($t === 'tous') {
+            $dateBlocageJournal = $d;
+            $dateBlocageResume  = $d;
+        } elseif ($t === 'journal') {
+            $dateBlocageJournal = $d;
+        } elseif ($t === 'resume') {
+            $dateBlocageResume = $d;
+        }
+    }
+} catch (Throwable $e) {}
+
 // ==========================================
 // A) RECUPERATION DES RESUMES DU JOUR
 // ==========================================
@@ -50,11 +82,13 @@ $sqlResumesJour = "
         rc.resume_texte,
         rc.devoir,
         rc.piece_jointe AS resume_pj,
+        rc.created_at AS resume_created_at,
         j.id AS journal_id,
         j.jour_date,
         j.matieres,
         j.note AS journal_note,
         j.piece_jointe AS journal_pj,
+        j.created_at AS journal_created_at,
         c.intitule AS cours_nom,
         a.nom AS prof_nom,
         a.prenom AS prof_prenom
@@ -65,8 +99,15 @@ $sqlResumesJour = "
     WHERE j.classe_id = :classe_id
       AND j.statut = 'valider'
       AND j.jour_date = CURRENT_DATE()
-    ORDER BY rc.id DESC
 ";
+
+if ($dateBlocageResume !== null) {
+    // Exclure les résumés créés à partir de la date de début du blocage
+    $sqlResumesJour .= " AND DATE(rc.created_at) < " . $pdo->quote($dateBlocageResume);
+}
+
+$sqlResumesJour .= " ORDER BY rc.id DESC";
+
 $stJour = $pdo->prepare($sqlResumesJour);
 $stJour->execute([':classe_id' => $classeId]);
 $resumesDuJour = $stJour->fetchAll(PDO::FETCH_ASSOC);
@@ -77,7 +118,6 @@ $resumesDuJour = $stJour->fetchAll(PDO::FETCH_ASSOC);
 $search = trim((string)($_GET['q'] ?? ''));
 $filterDate = trim((string)($_GET['date'] ?? ''));
 
-// Pagination
 $perPage = 6;
 $page = max(1, (int)($_GET['page'] ?? 1));
 $offset = ($page - 1) * $perPage;
@@ -88,6 +128,11 @@ $whereClauses = [
     "j.jour_date < CURRENT_DATE()"
 ];
 $params = [':classe_id' => $classeId];
+
+if ($dateBlocageResume !== null) {
+    $whereClauses[] = "DATE(rc.created_at) < :date_blocage_resume";
+    $params[':date_blocage_resume'] = $dateBlocageResume;
+}
 
 if ($search !== '') {
     $whereClauses[] = "(rc.titre_lecon LIKE :search OR c.intitule LIKE :search OR rc.resume_texte LIKE :search OR j.matieres LIKE :search)";
@@ -101,7 +146,6 @@ if ($filterDate !== '') {
 
 $whereSql = implode(' AND ', $whereClauses);
 
-// Compte total
 $countStmt = $pdo->prepare("
     SELECT COUNT(*) 
     FROM resume_cours rc
@@ -113,7 +157,6 @@ $countStmt->execute($params);
 $totalRows = (int)$countStmt->fetchColumn();
 $totalPages = max(1, (int)ceil($totalRows / $perPage));
 
-// Requête de l'historique
 $sqlHistorique = "
     SELECT 
         rc.id AS resume_id,
@@ -126,11 +169,13 @@ $sqlHistorique = "
         rc.resume_texte,
         rc.devoir,
         rc.piece_jointe AS resume_pj,
+        rc.created_at AS resume_created_at,
         j.id AS journal_id,
         j.jour_date,
         j.matieres,
         j.note AS journal_note,
         j.piece_jointe AS journal_pj,
+        j.created_at AS journal_created_at,
         c.intitule AS cours_nom,
         a.nom AS prof_nom,
         a.prenom AS prof_prenom
@@ -211,6 +256,17 @@ function getFormatIcon(string $format): string {
         </div><a class="btn btn-dark btn-sm" href="quizzes.php">&larr; Retour</a>
     </div>
 
+    <?php if ($dateBlocageResume !== null): ?>
+    <div class="alert alert-warning border-0 shadow-sm rounded-3 mb-4 d-flex align-items-center gap-3">
+        <i class="bi bi-lock-fill fs-3 text-warning"></i>
+        <div>
+            <strong>Accès partiel restreint :</strong>
+            Les nouveaux résumés publiés à partir du <b><?= date('d/m/Y', strtotime($dateBlocageResume)) ?></b> sont
+            actuellement masqués. Contactez le secrétariat pour la régularisation.
+        </div>
+    </div>
+    <?php endif; ?>
+
     <!-- ========================================== -->
     <!-- SECTION 1 : RESUMES DE COURS DU JOUR       -->
     <!-- ========================================== -->
@@ -266,6 +322,11 @@ function getFormatIcon(string $format): string {
                                     <i class="bi bi-file-text me-1"></i>Voir résumé
                                 </button>
 
+                                <?php 
+                                    // Masquer le bouton journal si le journal est bloqué pour cette date
+                                    $isJnlBloqueMaintenant = ($dateBlocageJournal !== null && date('Y-m-d', strtotime($res['journal_created_at'])) >= $dateBlocageJournal);
+                                ?>
+                                <?php if (!$isJnlBloqueMaintenant): ?>
                                 <button type="button" class="btn btn-sm btn-outline-primary btn-view-journal"
                                     data-cours="<?= htmlspecialchars($res['cours_nom'], ENT_QUOTES, 'UTF-8') ?>"
                                     data-date="<?= date('d/m/Y', strtotime($res['jour_date'])) ?>"
@@ -275,6 +336,7 @@ function getFormatIcon(string $format): string {
                                     data-pj="<?= htmlspecialchars($res['journal_pj'] ?? '', ENT_QUOTES, 'UTF-8') ?>">
                                     <i class="bi bi-journal-check me-1"></i>Vérifier journal
                                 </button>
+                                <?php endif; ?>
                             </div>
                         </div>
                     </div>
@@ -292,7 +354,6 @@ function getFormatIcon(string $format): string {
         <h4 class="h5 mb-0 text-secondary"><i class="bi bi-clock-history me-2"></i>Historique des anciens résumés</h4>
     </div>
 
-    <!-- Formulaire de filtrage par date et recherche -->
     <div class="card shadow-sm mb-4 border-0 bg-light">
         <div class="card-body p-3">
             <form method="GET" action="" class="row g-2">
@@ -314,7 +375,7 @@ function getFormatIcon(string $format): string {
     <?php if (empty($historiqueResumes)): ?>
     <div class="alert alert-info text-center py-4 shadow-sm mb-5">
         <i class="bi bi-info-circle fs-4 d-block mb-2"></i>
-        Aucun ancien résumé trouvé correspondant à votre recherche.
+        Aucun ancien résumé accessible correspondant à votre recherche.
     </div>
     <?php else: ?>
     <div class="row g-3 mb-4">
@@ -332,7 +393,8 @@ function getFormatIcon(string $format): string {
                     </div>
 
                     <h6 class="card-title fw-bold text-dark mb-1">
-                       <strong>Tite de la leçon :</strong> <?= htmlspecialchars($res['titre_lecon'] ?: 'Leçon du journal', ENT_QUOTES, 'UTF-8') ?>
+                        <strong>Titre de la leçon :</strong>
+                        <?= htmlspecialchars($res['titre_lecon'] ?: 'Leçon du journal', ENT_QUOTES, 'UTF-8') ?>
                     </h6>
 
                     <p class="text-muted small mb-2">
@@ -357,6 +419,10 @@ function getFormatIcon(string $format): string {
                             <i class="bi bi-file-text me-1"></i>Voir résumé
                         </button>
 
+                        <?php 
+                            $isJnlBloqueOld = ($dateBlocageJournal !== null && date('Y-m-d', strtotime($res['journal_created_at'])) >= $dateBlocageJournal);
+                        ?>
+                        <?php if (!$isJnlBloqueOld): ?>
                         <button type="button" class="btn btn-sm btn-outline-primary btn-view-journal"
                             data-cours="<?= htmlspecialchars($res['cours_nom'], ENT_QUOTES, 'UTF-8') ?>"
                             data-date="<?= date('d/m/Y', strtotime($res['jour_date'])) ?>"
@@ -366,6 +432,7 @@ function getFormatIcon(string $format): string {
                             data-pj="<?= htmlspecialchars($res['journal_pj'] ?? '', ENT_QUOTES, 'UTF-8') ?>">
                             <i class="bi bi-journal-check me-1"></i>Vérifier journal
                         </button>
+                        <?php endif; ?>
                     </div>
                 </div>
             </div>
@@ -373,7 +440,6 @@ function getFormatIcon(string $format): string {
         <?php endforeach; ?>
     </div>
 
-    <!-- Pagination de l'historique -->
     <?php if ($totalPages > 1): ?>
     <nav class="mb-5">
         <ul class="pagination justify-content-center">
@@ -462,9 +528,7 @@ function getFormatIcon(string $format): string {
     <?php endif; ?>
 </div>
 
-<!-- ========================================== -->
-<!-- MODAL 1 : VOIR RÉSUMÉ DE COURS             -->
-<!-- ========================================== -->
+<!-- MODAL RÉSUMÉ -->
 <div class="modal fade" id="modalResumeCours" tabindex="-1" aria-labelledby="modalResumeLabel" aria-hidden="true">
     <div class="modal-dialog modal-lg modal-dialog-scrollable">
         <div class="modal-content">
@@ -521,9 +585,7 @@ function getFormatIcon(string $format): string {
     </div>
 </div>
 
-<!-- ========================================== -->
-<!-- MODAL 2 : VÉRIFIER JOURNAL DE CLASSE      -->
-<!-- ========================================== -->
+<!-- MODAL JOURNAL -->
 <div class="modal fade" id="modalJournalClasse" tabindex="-1" aria-labelledby="modalJournalLabel" aria-hidden="true">
     <div class="modal-dialog modal-md modal-dialog-scrollable">
         <div class="modal-content">
@@ -570,7 +632,6 @@ function getFormatIcon(string $format): string {
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    // 1) Modal Résumé
     const modalResumeEl = document.getElementById('modalResumeCours');
     if (modalResumeEl) {
         const bsModalResume = new bootstrap.Modal(modalResumeEl);
@@ -620,7 +681,6 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    // 2) Modal Journal
     const modalJournalEl = document.getElementById('modalJournalClasse');
     if (modalJournalEl) {
         const bsModalJournal = new bootstrap.Modal(modalJournalEl);
@@ -643,7 +703,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     boxNote.classList.add('d-none');
                 }
 
-                const boxPj = document.getElementById('boxJnlPj');
+                const boxPj = document.getElementById('boxPjResume');
                 const pjLink = document.getElementById('jnlPjLink');
                 if (d.pj && d.pj.trim() !== '') {
                     pjLink.href = '<?= BASE_URL ?>/uploads/attachement_journal_de_class/' +

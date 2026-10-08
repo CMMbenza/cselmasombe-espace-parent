@@ -7,7 +7,7 @@ require_parent();
 require_once __DIR__ . '/../layout/header.php';
 require_once __DIR__ . '/../layout/navbar.php';
 
-$mid = (int)($_SESSION['parent']['id'] ?? 0);
+$mid = (int)($_SESSION['parent']['id'] ?? ($_SESSION['menage_id'] ?? 0));
 $eid = (int)get_current_eleve_id();
 
 if ($eid <= 0) {
@@ -35,6 +35,38 @@ if (!$eleve) {
 
 $classeId = (int)$eleve['classe'];
 
+// -------------------------------------------------------------------------
+// RÉCUPÉRATION DE LA DATE DE DÉBUT DU BLOCAGE (SI ACTIF)
+// -------------------------------------------------------------------------
+$dateBlocageJournal = null;
+$dateBlocageResume  = null;
+
+try {
+    $stB = $pdo->prepare("
+        SELECT type_acces, date_debut 
+        FROM blocage_acces 
+        WHERE menage_id = :mid 
+          AND statut = 'actif' 
+          AND date_debut <= CURDATE()
+    ");
+    $stB->execute([':mid' => $mid]);
+    $blocages = $stB->fetchAll(PDO::FETCH_ASSOC);
+
+    foreach ($blocages as $b) {
+        $t = $b['type_acces'];
+        $d = $b['date_debut'];
+
+        if ($t === 'tous') {
+            $dateBlocageJournal = $d;
+            $dateBlocageResume  = $d;
+        } elseif ($t === 'journal') {
+            $dateBlocageJournal = $d;
+        } elseif ($t === 'resume') {
+            $dateBlocageResume = $d;
+        }
+    }
+} catch (Throwable $e) {}
+
 // ==========================================
 // A) RECUPERATION DU JOURNAL DU JOUR + RESUME
 // ==========================================
@@ -45,6 +77,7 @@ $sqlJour = "
         j.matieres,
         j.note,
         j.piece_jointe,
+        j.created_at AS journal_created_at,
         c.intitule AS cours_nom,
         a.nom AS prof_nom,
         a.prenom AS prof_prenom,
@@ -57,7 +90,8 @@ $sqlJour = "
         rc.competence_attendue,
         rc.resume_texte,
         rc.devoir,
-        rc.piece_jointe AS resume_pj
+        rc.piece_jointe AS resume_pj,
+        rc.created_at AS resume_created_at
     FROM journal_classe j
     JOIN cours c ON c.id = j.cours_id
     LEFT JOIN agent a ON a.id = j.prof_id
@@ -65,19 +99,25 @@ $sqlJour = "
     WHERE j.classe_id = :classe_id
       AND j.statut = 'valider'
       AND j.jour_date = CURRENT_DATE()
-    ORDER BY j.id DESC
 ";
+
+if ($dateBlocageJournal !== null) {
+    // Exclure le journal si créé à partir de la date de blocage
+    $sqlJour .= " AND DATE(j.created_at) < " . $pdo->quote($dateBlocageJournal);
+}
+
+$sqlJour .= " ORDER BY j.id DESC";
+
 $stJour = $pdo->prepare($sqlJour);
 $stJour->execute([':classe_id' => $classeId]);
 $journalDuJour = $stJour->fetchAll(PDO::FETCH_ASSOC);
 
 // ==========================================
-// B) RECUPERATION DE L'HISTORIQUE DU JOURNAL + RESUME
+// B) RECUPERATION DE L'HISTORIQUE DU JOURNAL
 // ==========================================
 $search = trim((string)($_GET['q'] ?? ''));
 $filterDate = trim((string)($_GET['date'] ?? ''));
 
-// Pagination
 $perPage = 6;
 $page = max(1, (int)($_GET['page'] ?? 1));
 $offset = ($page - 1) * $perPage;
@@ -89,6 +129,11 @@ $whereClauses = [
     "YEAR(j.jour_date) = YEAR(CURRENT_DATE())"
 ];
 $params = [':classe_id' => $classeId];
+
+if ($dateBlocageJournal !== null) {
+    $whereClauses[] = "DATE(j.created_at) < :date_blocage_journal";
+    $params[':date_blocage_journal'] = $dateBlocageJournal;
+}
 
 if ($search !== '') {
     $whereClauses[] = "(j.matieres LIKE :search OR c.intitule LIKE :search OR j.note LIKE :search OR rc.titre_lecon LIKE :search)";
@@ -102,7 +147,6 @@ if ($filterDate !== '') {
 
 $whereSql = implode(' AND ', $whereClauses);
 
-// Compter le total d'entrées historiques
 $countStmt = $pdo->prepare("
     SELECT COUNT(*) 
     FROM journal_classe j
@@ -114,7 +158,6 @@ $countStmt->execute($params);
 $totalRows = (int)$countStmt->fetchColumn();
 $totalPages = max(1, (int)ceil($totalRows / $perPage));
 
-// Entrées historiques
 $sqlHistorique = "
     SELECT 
         j.id,
@@ -122,6 +165,7 @@ $sqlHistorique = "
         j.matieres,
         j.note,
         j.piece_jointe,
+        j.created_at AS journal_created_at,
         c.intitule AS cours_nom,
         a.nom AS prof_nom,
         a.prenom AS prof_prenom,
@@ -134,7 +178,8 @@ $sqlHistorique = "
         rc.competence_attendue,
         rc.resume_texte,
         rc.devoir,
-        rc.piece_jointe AS resume_pj
+        rc.piece_jointe AS resume_pj,
+        rc.created_at AS resume_created_at
     FROM journal_classe j
     JOIN cours c ON c.id = j.cours_id
     LEFT JOIN agent a ON a.id = j.prof_id
@@ -162,6 +207,17 @@ $historique = $stHisto->fetchAll(PDO::FETCH_ASSOC);
         </div><a class="btn btn-dark btn-sm" href="quizzes.php">&larr; Retour</a>
     </div>
 
+    <?php if ($dateBlocageJournal !== null): ?>
+    <div class="alert alert-warning border-0 shadow-sm rounded-3 mb-4 d-flex align-items-center gap-3">
+        <i class="bi bi-lock-fill fs-3 text-warning"></i>
+        <div>
+            <strong>Accès restreint au Journal :</strong>
+            Les fiches publiées à partir du <b><?= date('d/m/Y', strtotime($dateBlocageJournal)) ?></b> sont
+            actuellement suspendues. Veuillez vous adresser à la direction.
+        </div>
+    </div>
+    <?php endif; ?>
+
     <!-- ========================================== -->
     <!-- SECTION 1 : JOURNAL DU JOUR                -->
     <!-- ========================================== -->
@@ -176,7 +232,7 @@ $historique = $stHisto->fetchAll(PDO::FETCH_ASSOC);
             <?php if (empty($journalDuJour)): ?>
             <div class="text-center py-3 text-muted">
                 <i class="bi bi-calendar-x fs-2 d-block mb-1 text-secondary"></i>
-                Aucun cours ou devoir enregistré pour aujourd'hui.
+                Aucun cours ou devoir accessible pour aujourd'hui.
             </div>
             <?php else: ?>
             <div class="row g-3">
@@ -216,7 +272,12 @@ $historique = $stHisto->fetchAll(PDO::FETCH_ASSOC);
                             </a>
                             <?php endif; ?>
 
-                            <?php if (!empty($item['resume_id'])): ?>
+                            <?php 
+                                // Vérification conditionnelle du résumé lié
+                                $isResuBloqueMaintenant = (!empty($item['resume_created_at']) && $dateBlocageResume !== null && date('Y-m-d', strtotime($item['resume_created_at'])) >= $dateBlocageResume);
+                            ?>
+
+                            <?php if (!empty($item['resume_id']) && !$isResuBloqueMaintenant): ?>
                             <button type="button" class="btn btn-sm btn-success btn-view-resume"
                                 data-cours="<?= htmlspecialchars($item['cours_nom'], ENT_QUOTES, 'UTF-8') ?>"
                                 data-titre="<?= htmlspecialchars($item['titre_lecon'] ?? '', ENT_QUOTES, 'UTF-8') ?>"
@@ -247,7 +308,6 @@ $historique = $stHisto->fetchAll(PDO::FETCH_ASSOC);
         <h4 class="h5 mb-0 text-secondary"><i class="bi bi-clock-history me-2"></i>Historique du journal</h4>
     </div>
 
-    <!-- Barre de recherche -->
     <div class="card shadow-sm mb-4 border-0 bg-light">
         <div class="card-body p-3">
             <form method="GET" action="" class="row g-2">
@@ -266,11 +326,10 @@ $historique = $stHisto->fetchAll(PDO::FETCH_ASSOC);
         </div>
     </div>
 
-    <!-- Tableau Historique -->
     <?php if (empty($historique)): ?>
     <div class="alert alert-info text-center py-4 shadow-sm">
         <i class="bi bi-info-circle fs-4 d-block mb-2"></i>
-        Aucun historique correspondant disponible.
+        Aucun historique accessible correspondant.
     </div>
     <?php else: ?>
     <div class="table-responsive shadow-sm rounded">
@@ -314,7 +373,11 @@ $historique = $stHisto->fetchAll(PDO::FETCH_ASSOC);
                             </a>
                             <?php endif; ?>
 
-                            <?php if (!empty($h['resume_id'])): ?>
+                            <?php 
+                                $isResuBloqueOld = (!empty($h['resume_created_at']) && $dateBlocageResume !== null && date('Y-m-d', strtotime($h['resume_created_at'])) >= $dateBlocageResume);
+                            ?>
+
+                            <?php if (!empty($h['resume_id']) && !$isResuBloqueOld): ?>
                             <button type="button" class="btn btn-sm btn-success btn-view-resume"
                                 title="Voir le résumé du cours"
                                 data-cours="<?= htmlspecialchars($h['cours_nom'], ENT_QUOTES, 'UTF-8') ?>"
@@ -331,7 +394,7 @@ $historique = $stHisto->fetchAll(PDO::FETCH_ASSOC);
                             </button>
                             <?php endif; ?>
 
-                            <?php if (empty($h['piece_jointe']) && empty($h['resume_id'])): ?>
+                            <?php if (empty($h['piece_jointe']) && (empty($h['resume_id']) || $isResuBloqueOld)): ?>
                             <span class="text-muted">-</span>
                             <?php endif; ?>
                         </div>
@@ -342,7 +405,6 @@ $historique = $stHisto->fetchAll(PDO::FETCH_ASSOC);
         </table>
     </div>
 
-    <!-- Pagination -->
     <?php if ($totalPages > 1): ?>
     <nav class="mt-4">
         <ul class="pagination justify-content-center">
@@ -360,9 +422,7 @@ $historique = $stHisto->fetchAll(PDO::FETCH_ASSOC);
     <?php endif; ?>
 </div>
 
-<!-- ========================================== -->
-<!-- MODAL : VOIR RESUMÉ DU COURS               -->
-<!-- ========================================== -->
+<!-- MODAL RÉSUMÉ -->
 <div class="modal fade" id="modalResumeCours" tabindex="-1" aria-labelledby="modalResumeLabel" aria-hidden="true">
     <div class="modal-dialog modal-lg modal-dialog-scrollable">
         <div class="modal-content">
@@ -436,7 +496,6 @@ document.addEventListener('DOMContentLoaded', function() {
             document.getElementById('resDomaine').textContent = d.domaine || 'N/C';
             document.getElementById('resDiscipline').textContent = d.discipline || 'N/C';
 
-            // Compétence attendue
             const boxComp = document.getElementById('boxCompetence');
             if (d.competence && d.competence.trim() !== '') {
                 document.getElementById('resCompetence').textContent = d.competence;
@@ -445,11 +504,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 boxComp.classList.add('d-none');
             }
 
-            // Texte du résumé
             document.getElementById('resResumeTexte').textContent = d.resume ||
                 'Aucun texte saisi.';
 
-            // Devoir
             const boxDevoir = document.getElementById('boxDevoir');
             if (d.devoir && d.devoir.trim() !== '') {
                 document.getElementById('resDevoir').textContent = d.devoir;
@@ -458,12 +515,11 @@ document.addEventListener('DOMContentLoaded', function() {
                 boxDevoir.classList.add('d-none');
             }
 
-            // Pièce jointe du résumé
             const boxPj = document.getElementById('boxPjResume');
             const pjLink = document.getElementById('resPjLink');
             if (d.pj && d.pj.trim() !== '') {
                 pjLink.href = '<?= BASE_URL ?>/uploads/resume_cours/' + encodeURIComponent(d
-                    .pj);
+                .pj);
                 boxPj.classList.remove('d-none');
             } else {
                 boxPj.classList.add('d-none');
